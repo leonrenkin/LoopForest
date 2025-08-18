@@ -218,18 +218,25 @@ def find_outer_loop(vertex_loop:List[int] ,edge:List[int] ,point_cloud: List[Lis
 # ----------------- class defintions ----------------------
 @dataclass
 class Loop:
-    """Loop saved as a list of vertex indices"""
+    """
+    Loop saved as a list of vertex indices. 
+    Point coordinates can be accessed via point_cloud[vertex] where vertex is in vertex_list and point_cloud is the list of points saved in the loop forest
+    """
     vertex_list: List[int]
     id: int
+    active_start: float = -1           #[active_start, active_end) is interval in which the loop is active as an optimal cycle rep
+    active_end: float = -1              #-1 as default since this should not appear in computations
 
 
 @dataclass
 class Node:
+    """ Objects which are the nodes in the LoopForest graph. 
+    Each node has a loop representative."""
     id: int
     filt_val: float
-    type: Literal["leaf", "root", "merge", "update"]
-    loop: Loop        #Loops are saved as list of indices
-    children: Tuple[int,...]            #ids of children
+    type: Literal["leaf", "root", "merge", "update"]            #Special case if points are not in general position: a node can be type "merge" and also be a root, it then still appears in the root list
+    loop: Loop                                                  #Loops are saved as list of indices of simplex
+    children: Tuple[int,...]                                    #ids of children
     parent: Optional[int] = None
     #is_root: bool = True  #True if it is the root of a tree, also used for bookkeeping of active loops
 
@@ -238,9 +245,15 @@ class Node:
     
 @dataclass
 class Bar:
+    """ 
+    Object which stores a bar in H1 persistence together with a progression of cycle reps.
+    Each cycle rep has a an active_start and active_end attribute which is the interval in which this representative is optimal.
+    The cycle reps are a strictly decreasing chain w.r.t. inclusion.
+    """
     birth: float
     death: float
-    node_progression: tuple[Node]
+    _node_progression: tuple[int,...] #nodes saved as node_ids
+    cycle_reps: list[Loop]
 
 
 class LoopForest:
@@ -266,7 +279,7 @@ class LoopForest:
         # Extract s filtration up to order 2
         self.filtration = [f for f in self.simplex_tree.get_filtration() if len(f[0]) <= 3]  # Keep simplices up to 2D
 
-        self.barcode: Set[Bar] = set()
+        self.barcode: List[Bar] = []
 
 
 
@@ -404,9 +417,11 @@ class LoopForest:
 
     def active_nodes_at(self, filt_val: float) -> List[Node]:
         """
-        Active at r if:
-        - n.filt_val <= r
-        - has a parent and parent has filt val > r
+        Return list of active nodes at a given filtration value.
+
+        A node is active at r if:
+        - node.filt_val >= r
+        - has a parent and parent has filt val < r
         """
         nodes = self.nodes
 
@@ -429,6 +444,7 @@ class LoopForest:
         return active
 
     def leaves_below_node(self, node: Node) -> set[int]:
+        """ Returns set of all leaves below a given node (below in tree means higher filtration value) """
         leaf_ids: set[int] = set()
 
         if node.type == "leaf":
@@ -446,25 +462,43 @@ class LoopForest:
 
         return leaf_ids
 
-    def leaf_to_node_path(self, leaf: Node, node: Node):
+    def leaf_to_node_path(self, leaf: Node, node: Node) -> List[int]:
+        """ 
+        Returns direct path from a leaf to a node.
+        Path is returned as list of node ids
+
+        If there does not exist a path, an error is raised.
+        """
         path = [leaf.id]
 
         active_node = leaf
         while active_node.parent != None:
             active_node = self.nodes[active_node.parent]
             path.append(active_node.id)
+            if active_node.id == node.id:
+                return path
 
         if active_node.id != node.id:
             raise ValueError(f"Node {node} is not above leaf {leaf}")
 
         return path
 
-    def node_to_leaf_path(self, leaf: Node, node: Node):
-        return self.leaf_to_node_path(leaf=leaf, node=node).reverse()
+    def node_to_leaf_path(self, leaf: Node, node: Node) -> List[int]:
+        """ 
+        Returns direct path from a node to a leaf.
+        Path is returned as list of node ids
+
+        If there does not exist a path, an error is raised.
+        """
+        return list(reversed(self.leaf_to_node_path(leaf=leaf, node=node)))
 
     # ----- reduce forest (collapses trivial edges which happen at the same filtration value) -------------
 
     def _collapse_parent_child(self, parent: Node, child: Node):
+        """
+        Collapses a parent - child pair into the parent node.
+        Intended for parent - child pair with same filtration value 
+        """
         #print("collapsing parent and child")
 
         #collect new children of parents
@@ -550,14 +584,78 @@ class LoopForest:
 
         return
 
+    # If we have multiple edges appearing at the same filtration value, we might get a root node which is also a merge in the reduction process
+    # This will lead to a node which appears in the root list but has type merge
+    # Not a mistake in the code, simply the way the edge case is currently handled
+    # -> use node.parent == None to check if a node is a root
+
+    # ------ Add active period of each loops ----------
+
+    def _compute_loop_activity(self):
+        """ Computes period in which each loop is an optimal cycle rep and adds it to the loop as attributes """
+
+        for node in self.nodes.values():
+
+            if node.parent == None:
+                continue
+            
+            parent = self.nodes[node.parent]
+            node.loop.active_end = node.filt_val
+            node.loop.active_start = parent.filt_val
+
+
+        return
+
     # ----- Compute barcode sequence ---------
 
+    def _compute_tree_barcode(self, node: Node, child_id: int):
+        """ Recursively computes barcode of sub-tree below the input node and the child with child_id"""
+
+        #compute longest bar.
+        choosen_child = self.nodes[child_id]
+        leaf_ids = self.leaves_below_node(node=choosen_child)
+
+        max_leaf_id = max( leaf_ids, key = lambda id: self.nodes[id].filt_val)
+        max_leaf = self.nodes[max_leaf_id]
+
+        path = self.node_to_leaf_path(node=node, leaf = max_leaf)
+        if len(path)<=1:
+            raise ValueError("path for barcode too short, something went wrong")
+
+        cycle_reps = [self.nodes[id].loop for id in path[1:]]
+        
+        bar = Bar(birth=node.filt_val, death=max_leaf.filt_val, _node_progression=tuple(path), cycle_reps=cycle_reps )
+        self.barcode.append(bar)
+
+        #print(f"{bar} added")
+
+        #at every merge node, compute barcode of subtree of merge nodes with the other children
+        for id in self.leaf_to_node_path(node=node,leaf=max_leaf)[:-2]:   #we do not want to repeat the top node of the tree
+            child_node = self.nodes[id]
+            pid = child_node.parent
+            if pid == None:
+                raise ValueError(f"Parent node incounter, this should not happen. Node id {pid}")
+            parent_node = self.nodes[pid]
+
+            if parent_node.type == "merge":
+                for cid in parent_node.children:
+                    if cid == id:
+                        continue 
+                    else:
+                        self._compute_tree_barcode(node=parent_node, child_id=cid)      
+
     def compute_barcode(self):
-        print("Implementation coming soon")
+        """ Computes H1 barcode of forest and stores it in self.barcode """
+        print("Computing Barcode")
+        #compute barcode for each tree
+        for root in self.roots:
+            for child_id in root.children:
+                self._compute_tree_barcode(node=root, child_id=child_id)
+        print("Barcode computation completed")
+
         return
 
     
-
     # ----- plotting tools -------
 
     #ChatGPT plotting function
@@ -822,6 +920,116 @@ class LoopForest:
             plt.show()
         return ax
     
+    #ChatGPT plotting function
+    def plot_barcode(
+        self,
+        *,
+        ax=None,
+        sort: str | None = "length",   # "length" | "birth" | "death" | None
+        title: str = "Barcode",
+        xlabel: str = "filtration value",
+    ):
+        """
+        Plot a 1D barcode from self.barcode (a list[Bar]).
+        Each Bar contributes a horizontal segment from birth to death.
+        If death is +inf, an arrow is drawn to the right.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes | None
+            If given, draw on this axes. Otherwise a new figure/axes is created.
+        sort : {"length","birth","death",None}
+            Sort bars before plotting (None preserves current order).
+        title : str
+            Plot title.
+        xlabel : str
+            Label for the x-axis.
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            The axes the barcode was drawn on.
+        """
+        import math
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        if not getattr(self, "barcode", None):
+            raise ValueError("No bars to plot: `self.barcode` is empty.")
+
+        # Work on a copy so we don't mutate user order unless requested.
+        bars = list(self.barcode)
+
+        # Optional sorting
+        if sort == "birth":
+            bars.sort(key=lambda b: (b.birth, b.death))
+        elif sort == "death":
+            def dkey(b):
+                return (math.inf if not math.isfinite(b.death) else b.death, b.birth)
+            bars.sort(key=dkey)
+        elif sort == "length":
+            def length(b):
+                return (math.inf if not math.isfinite(b.death) else b.death) - b.birth
+            bars.sort(key=length, reverse=True)
+
+        # Create axes if needed
+        created_ax = False
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, max(2.0, 0.35 * len(bars))))
+            created_ax = True
+        else:
+            fig = ax.figure
+
+        # Determine x-limits with a bit of padding
+        births = np.array([b.birth for b in bars], dtype=float)
+        deaths = np.array([b.death for b in bars], dtype=float)
+        finite_deaths = deaths[np.isfinite(deaths)]
+
+        xmin = float(np.nanmin(births))
+        xmax = float(np.nanmax(finite_deaths)) if finite_deaths.size else float(np.nanmax(births))
+        if not np.isfinite(xmax):  # extreme corner case
+            xmax = xmin
+
+        pad = (xmax - xmin) * 0.05 if xmax > xmin else 1.0
+        ax.set_xlim(xmin - pad, xmax + pad)
+
+        # Draw segments
+        for i, b in enumerate(bars):
+            x0, x1 = float(b.birth), float(b.death)
+
+            # Guard against inverted bars due to numerical issues
+            if math.isfinite(x1) and x1 < x0:
+                x0, x1 = x1, x0
+
+            if math.isfinite(x1):
+                ax.hlines(y=i, xmin=x0, xmax=x1, linewidth=2)
+                # Optional end ticks (comment out if you don't want them)
+                ax.plot([x0, x1], [i, i], linestyle="None", marker="|", markersize=8)
+            else:
+                # Draw to the right with an arrow for infinity
+                right = ax.get_xlim()[1]
+                ax.hlines(y=i, xmin=x0, xmax=right - 0.25 * pad, linewidth=2)
+                ax.annotate(
+                    "",
+                    xy=(right - 0.15 * pad, i),
+                    xytext=(x0, i),
+                    arrowprops=dict(arrowstyle="->", lw=2),
+                    va="center"
+                )
+
+        # Cosmetics
+        ax.set_yticks([])
+        ax.set_xlabel(xlabel)
+        ax.set_title(title)
+        ax.grid(True, axis="x", linestyle=":", alpha=0.5)
+        fig.tight_layout()
+
+        # If we created the axes, show it immediately (so this works in scripts)
+        if created_ax:
+            import matplotlib.pyplot as plt
+            plt.show()
+
+        return ax
 
 
 #------------ helper functions which use classes ---------------
@@ -829,7 +1037,12 @@ class LoopForest:
 
 
 # ---------- Compute Loop Forest -----------------
-def compute_loop_forest(point_cloud, reduce: bool = True):
+def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True):
+    """ 
+    Computes LoopForest object for a point cloud.
+    reduce = True means that multiple changes at the same filtration value is collapsed to a single node.
+    compute_barcode = True computes barcodes and stores it in self.barcode as list of bar objects
+    """
     loop_forest = LoopForest(point_cloud=point_cloud)
     
     #simplices is already ordered in ascending order by number of simplices 
@@ -884,7 +1097,16 @@ def compute_loop_forest(point_cloud, reduce: bool = True):
 
     print("Forest succesfully computed")
 
+    loop_forest._compute_loop_activity()
+
     if reduce:
         loop_forest._reduce_forest()
 
+    if compute_barcode:
+        loop_forest.compute_barcode()
+        
+
     return loop_forest
+
+
+
