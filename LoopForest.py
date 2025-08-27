@@ -132,9 +132,10 @@ def split_vertex_loop_with_double_edge(edge, loop):
         idx1 +=1 # type: ignore
     
     for idx2 in range(idx1+1, len(loop)): # type: ignore
-        if loop[idx2] in edge:
+        if loop[idx2] in edge and (loop[(idx2+1) % (len(loop)-1)] in edge or loop[idx2-1] in edge):
             break
-    idx2 +=1 # type: ignore
+    if idx2 !=len(loop)-1: # type: ignore
+        idx2 +=1 # type: ignore
 
     #deal with edge case where we the edge [a,b] appears as [a,b,a]
     #in this case idx1 is at b and idx2 is the one after the second a 
@@ -155,7 +156,8 @@ def split_vertex_loop_with_double_edge(edge, loop):
     loop1 = loop[idx1: idx2-1] # type: ignore
     
     if idx1 == 0: # type: ignore
-        loop2 = loop[idx2:len(loop)-1]  
+        loop2 = loop[idx2:len(loop)-1]  # type: ignore
+    
     else:
         loop2 = loop[idx2:] + loop[:idx1-1] # type: ignore
 
@@ -1086,6 +1088,9 @@ def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True)
                                               vertex_loop=L[0].loop.vertex_list, 
                                               point_cloud=loop_forest.point_cloud)
                 if not loop_in_filtration_check(vertex_loop, simplex_tree=loop_forest.simplex_tree, filt_value=filt_val):
+                            print('edge', simplex)
+                            print(f'starting loop', L[0].loop)
+                            print(f'outer loop', vertex_loop)
                             raise ValueError("Loop not in simplex, Tiebreak Case")
                 
                 updated_loop = loop_forest.generate_loop(vertex_loop)
