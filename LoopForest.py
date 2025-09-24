@@ -7,6 +7,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection, PolyCollection
+import time
 
 # ------- helper functions --------------
 
@@ -20,7 +21,7 @@ def loop_in_filtration_check(loop, simplex_tree, filt_value):
             return False
         
         elif birth > filt_value:
-            print(f"Edge {[loop[i-1],loop[i]]} is in simplicial complex but appears later in the filtration")
+            print(f"Edge {[loop[i-1],loop[i]]} is in simplicial complex but appears later in the filtration. \n Input filt_val={filt_value}, Birth of edge {birth}")
             return False
 
     return True
@@ -120,6 +121,10 @@ def contains_pair_in_order(lst, a, b):
             return True
     return False
 
+# canonical key: sorted tuple of vertex ids so orientation doesn’t matter
+def key(simplex): 
+    return tuple(sorted(simplex))
+
 def split_vertex_loop_with_double_edge(edge, loop):
     """splits a loop containg edge twice into two disjoint loops.
     return two loops, one of which might be empty"""
@@ -188,7 +193,7 @@ def loop_ymin(loop, point_cloud):
     return max(point_cloud[idx][1] for idx in loop)
 
 def find_outer_loop(vertex_loop:List[int] ,edge:List[int] ,point_cloud: List[List[float]]):
-    """ Computes surviving loop in case of double edge in a single loop"""
+    """ Computes surviving loop in case of double edge in a single loop, first returned loop is survivor loop"""
     #print("tiebreak activated")
     loop1, loop2 = split_vertex_loop_with_double_edge(edge=edge, loop=vertex_loop)
 
@@ -196,10 +201,10 @@ def find_outer_loop(vertex_loop:List[int] ,edge:List[int] ,point_cloud: List[Lis
     if len(loop1)<=2 and len(loop2)<=2:
         raise ValueError("Both split loops are trivial")
     elif len(loop1) <=2:
-        return loop2
+        return loop2, loop1
 
     elif len(loop2) <=2:
-        return loop1
+        return loop1, loop2
     
     else:
         #check which loop is contained by the other one
@@ -208,10 +213,10 @@ def find_outer_loop(vertex_loop:List[int] ,edge:List[int] ,point_cloud: List[Lis
 
         #could use ymax,  ymin, xmin to check if htey also satisfy the inequalities
         if xmax1>xmax2:
-            return loop1
+            return loop1, loop2
 
         if xmax1<xmax2:
-            return loop2
+            return loop2, loop1
 
         else:
             raise ValueError("Maximal x value of both loops is equal which should not happen")
@@ -311,7 +316,7 @@ class LoopForest:
 
         self.levels.append(filt_val)
 
-        return
+        return new_node
     
     def make_root(self, node: Node, filt_val: float):
         """
@@ -445,6 +450,10 @@ class LoopForest:
         active.sort(key=lambda n: (-n.filt_val, n.id))
         return active
 
+    def active_loops_at(self, filt_val: float) -> List[Loop]:
+        active_nodes = self.active_nodes_at(filt_val=filt_val)
+        return [node.loop for node in active_nodes]
+
     def leaves_below_node(self, node: Node) -> set[int]:
         """ Returns set of all leaves below a given node (below in tree means higher filtration value) """
         leaf_ids: set[int] = set()
@@ -494,6 +503,18 @@ class LoopForest:
         """
         return list(reversed(self.leaf_to_node_path(leaf=leaf, node=node)))
 
+    def get_root(self, node: Node) -> Node:
+        while node.parent != None:
+                    pid = node.parent
+                    node = self.nodes[pid]
+
+        return node
+
+    def _update_node_list(self, node_id_list: List[int]) -> List[Node]:
+        """ Returns list of all current roots of a given list of node IDs"""
+        L = [ self.get_root( self.nodes[id] ) for id in node_id_list ]
+        return L
+
     # ----- reduce forest (collapses trivial edges which happen at the same filtration value) -------------
 
     def _collapse_parent_child(self, parent: Node, child: Node):
@@ -501,7 +522,6 @@ class LoopForest:
         Collapses a parent - child pair into the parent node.
         Intended for parent - child pair with same filtration value 
         """
-        #print("collapsing parent and child")
 
         #collect new children of parents
         new_children = [cid for cid in parent.children if cid != child.id] #add children of parent apart from the child we collapse
@@ -551,11 +571,11 @@ class LoopForest:
         Repeats until no collapsible edges remain.
         """
         print("Reducing the forest")
+        reduction_start = time.perf_counter()
 
         changed = True 
         while changed: #in practice, this loop runs only once since we iterate over children while adding new children
             changed = False
-            #print("reducing loop started")
 
              #iterate over snapshot of the nodes in the tree, the nodes dict might be changed each iteration
             node_list = list(self.nodes.values())
@@ -582,7 +602,8 @@ class LoopForest:
                     print(f"Parent pointer of node with id {cid} was retroactively fixed "
                         f"(was {ch.parent}, set to {n.id}).")
 
-        print("Reduction complete")
+        reduction_time = time.perf_counter() - reduction_start
+        print(f"Reduction complete in {reduction_time} sec")
 
         return
 
@@ -629,8 +650,6 @@ class LoopForest:
         bar = Bar(birth=node.filt_val, death=max_leaf.filt_val, _node_progression=tuple(path), cycle_reps=cycle_reps )
         self.barcode.append(bar)
 
-        #print(f"{bar} added")
-
         #at every merge node, compute barcode of subtree of merge nodes with the other children
         for id in self.leaf_to_node_path(node=node,leaf=max_leaf)[:-2]:   #we do not want to repeat the top node of the tree
             child_node = self.nodes[id]
@@ -648,12 +667,17 @@ class LoopForest:
 
     def compute_barcode(self):
         """ Computes H1 barcode of forest and stores it in self.barcode """
+
         print("Computing Barcode")
+        barcode_start = time.perf_counter()
+
         #compute barcode for each tree
         for root in self.roots:
             for child_id in root.children:
                 self._compute_tree_barcode(node=root, child_id=child_id)
-        print("Barcode computation completed")
+
+        barcode_time = time.perf_counter() - barcode_start
+        print(f"Barcode computation completed in {barcode_time} sec")
 
         return
 
@@ -668,6 +692,8 @@ class LoopForest:
         show: bool = True,
         fill_triangles: bool = True,
         loop_vertex_markers: bool = False,
+        figsize: tuple[float, float] = (7, 7), 
+        point_size: float = 3,
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -704,7 +730,7 @@ class LoopForest:
             raise ValueError("point_cloud must be an (n_points, 2) array-like.")
 
         if ax is None:
-            _, ax = plt.subplots(figsize=(7, 7))
+            _, ax = plt.subplots(figsize=figsize)
 
         st = self.simplex_tree
 
@@ -723,7 +749,7 @@ class LoopForest:
                 tris_xy.append([pts[i], pts[j], pts[k]])
 
         # --- Base scatter
-        ax.scatter(pts[:, 0], pts[:, 1], s=18, color="k", zorder=3, label="points")
+        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
 
         # --- Draw triangles first (under edges)
         if fill_triangles and tris_xy:
@@ -1037,9 +1063,8 @@ class LoopForest:
 #------------ helper functions which use classes ---------------
 
 
-
 # ---------- Compute Loop Forest -----------------
-def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True):
+def compute_loop_forest(point_cloud, reduce: bool = False, compute_barcode= False):
     """ 
     Computes LoopForest object for a point cloud.
     reduce = True means that multiple changes at the same filtration value is collapsed to a single node.
@@ -1047,24 +1072,37 @@ def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True)
     """
     loop_forest = LoopForest(point_cloud=point_cloud)
     
-    #simplices is already ordered in ascending order by number of simplices 
-    #print(loop_forest.filtration)
+    
+    overall_start = time.perf_counter()
 
+    edge_loop_dict = {}
+
+    #simplices is already ordered in ascending order by number of simplices 
     for simplex, filt_val in reversed(loop_forest.filtration):
 
         if len(simplex)<=1:
             continue
         
-        #print("\nstarting with" ,simplex, filt_val, ", r=", filt_val)
-        #
-        # print(f"active node ids = {loop_forest._active_node_ids}")
-        
         if len(simplex) == 3:
-            loop_forest.add_leaf( triangle=simplex, filt_val=filt_val)
+            new_node = loop_forest.add_leaf( triangle=simplex, filt_val=filt_val)
+
+            faces = list(itertools.combinations(simplex, 2))
+            for edge in faces:
+                if key(edge) in edge_loop_dict:
+                    edge_loop_dict[key(edge)].append(new_node.id)
+                else:
+                    edge_loop_dict[key(edge)] = [new_node.id]
 
         if len(simplex) == 2:
             #L is loops containing nodes, can be of the form [],[l1], [l1,l2], [l1,l1]
-            L = loop_forest.nodes_with_loop_containing_edge(edge = simplex, node_ids=loop_forest._active_node_ids)
+            #L is active nodes over L_tmp
+
+            #If key exists, get its value and remove it
+            #if key does not exists, get []
+            L_tmp_ids = edge_loop_dict.pop(key(simplex), [])
+
+            L = loop_forest._update_node_list(L_tmp_ids)
+
 
             #if no loop contains edge, nothing happens
             if len(L) == 0:
@@ -1072,19 +1110,50 @@ def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True)
 
             #if edge is only contained in a single loop and appears only once in that loop once, remove that loop from the active loops 
             elif len(L) == 1:
+                #update the loop dict for all edges which very contained in the loop we just removed
+                vertex_loop = L[0].loop.vertex_list
+                for i in range(len(vertex_loop)):
+
+                        edge = [vertex_loop[i-1], vertex_loop[i]]
+
+
+                        L_edge_tmp = edge_loop_dict.pop(key(edge), None)
+                        if L_edge_tmp is None:
+                            continue
+
+                        L_edge = loop_forest._update_node_list(L_edge_tmp)
+
+                        if len(L_edge)> 2:
+                            raise ValueError("L_edge too long in loop removal process")
+
+                        if len(L_edge)==1:
+                            continue
+                        elif L_edge[0] != L[0]:
+                            edge_loop_dict[key(edge)] = [L_edge[0].id]
+                        elif L_edge[1] != L[0]: 
+                            edge_loop_dict[key(edge)] = [L_edge[1].id]
+                        else:
+                            continue
+                            
                 loop_forest.make_root(node=L[0],filt_val=filt_val)
+
                 continue
 
             elif len(L) == 2 and L[0]!=L[1]:
                 parent_loop = loop_forest.merge_loops(loop1=L[0].loop ,loop2= L[1].loop, edge=simplex) 
                 loop_forest.merge_nodes( node1=L[0], node2=L[1], parent_loop=parent_loop, filt_val=filt_val)
                 if not loop_in_filtration_check(parent_loop.vertex_list, simplex_tree=loop_forest.simplex_tree, filt_value=filt_val):
+                        print('edge', simplex)
+                        print('edge dict entry')
+                        print('filtration value', filt_val)
+                        print(f'first loop', L[0].loop)
+                        print(f'second loop', L[1].loop)
                         raise ValueError("Loop not in simplex, Loop concat Case")
 
 
             elif len(L) == 2 and L[0]==L[1]:
                 #Same edge is contained in a loop in both directions, we update the loop
-                vertex_loop = find_outer_loop(edge=simplex,
+                vertex_loop, redundant_vertices = find_outer_loop(edge=simplex,
                                               vertex_loop=L[0].loop.vertex_list, 
                                               point_cloud=loop_forest.point_cloud)
                 if not loop_in_filtration_check(vertex_loop, simplex_tree=loop_forest.simplex_tree, filt_value=filt_val):
@@ -1093,6 +1162,29 @@ def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True)
                             print(f'outer loop', vertex_loop)
                             raise ValueError("Loop not in simplex, Tiebreak Case")
                 
+                #update dict entries for edges from the redundant loop
+                if len(redundant_vertices)>=2:
+                    for i in range(len(redundant_vertices)):
+                        edge = [redundant_vertices[i-1], redundant_vertices[i]]
+
+                        L_edge_tmp = edge_loop_dict.pop(key(edge), None)
+                        if L_edge_tmp is None:
+                            continue
+
+                        L_edge = loop_forest._update_node_list(L_edge_tmp)
+
+                        if len(L_edge)> 2:
+                            raise ValueError("L_edge too long in loop removal process")
+
+                        if len(L_edge)==1:
+                            continue
+                        elif L_edge[0] != L[0]:
+                            edge_loop_dict[key(edge)] = [L_edge[0].id]
+                        elif L_edge[1] != L[0]: 
+                            edge_loop_dict[key(edge)] = [L_edge[1].id]
+                        else:
+                            continue
+
                 updated_loop = loop_forest.generate_loop(vertex_loop)
 
                 loop_forest.update_node(node=L[0], updated_loop=updated_loop, filt_val=filt_val)
@@ -1100,7 +1192,11 @@ def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True)
             else:
                 raise ValueError("Error, L is of the wrong form")
 
-    print("Forest succesfully computed")
+    overall_time = time.perf_counter() - overall_start
+
+    print(f"Forest succesfully computed in {overall_time} sec")
+
+    
 
     loop_forest._compute_loop_activity()
 
