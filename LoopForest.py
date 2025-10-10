@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection, PolyCollection
 import time
+import seaborn as sns
 
 # ------- helper functions --------------
 
@@ -145,7 +146,6 @@ def split_vertex_loop_with_double_edge(edge, loop):
     #deal with edge case where we the edge [a,b] appears as [a,b,a]
     #in this case idx1 is at b and idx2 is the one after the second a 
     if idx2-idx1 == 2: # type: ignore
-        print()
         loop1 = loop[:idx1] + loop[idx2:] # type: ignore
         loop2 = []
         #print(f"non-trivial loop returned: {loop1}")
@@ -192,7 +192,7 @@ def loop_ymax(loop, point_cloud):
 def loop_ymin(loop, point_cloud):
     return max(point_cloud[idx][1] for idx in loop)
 
-def find_outer_loop(vertex_loop:List[int] ,edge:List[int] ,point_cloud: List[List[float]]):
+def find_outer_loop(vertex_loop:List[int] ,edge:List[int], point_cloud):
     """ Computes surviving loop in case of double edge in a single loop, first returned loop is survivor loop"""
     #print("tiebreak activated")
     loop1, loop2 = split_vertex_loop_with_double_edge(edge=edge, loop=vertex_loop)
@@ -221,54 +221,101 @@ def find_outer_loop(vertex_loop:List[int] ,edge:List[int] ,point_cloud: List[Lis
         else:
             raise ValueError("Maximal x value of both loops is equal which should not happen")
 
-    
+def are_dict_keys_sorted(d):
+    """Return True if dict keys are in ascending order (linear time)."""
+    it = iter(d)  # iterates over keys in insertion order
+    try:
+        prev = next(it)
+    except StopIteration:
+        return True  # empty dict is trivially sorted
+
+    for k in it:
+        if k < prev:
+            return False
+        prev = k
+    return True
+
 # ----------------- class defintions ----------------------
-@dataclass
 class Loop:
     """
     Loop saved as a list of vertex indices. 
     Point coordinates can be accessed via point_cloud[vertex] where vertex is in vertex_list and point_cloud is the list of points saved in the loop forest
     """
-    vertex_list: List[int]
-    id: int
-    active_start: float = -1           #[active_start, active_end) is interval in which the loop is active as an optimal cycle rep
-    active_end: float = -1              #-1 as default since this should not appear in computations
-
+    def __init__(self, vertex_list: List[int], id: int):
+        self.vertex_list: List[int] = vertex_list
+        self.id: int = id
+        self.active_start: Optional[float] = None           #[active_start, active_end) is interval in which the loop is active as an optimal cycle rep
+        self.active_end: Optional[float] = None              
 
 @dataclass
 class Node:
     """ Objects which are the nodes in the LoopForest graph. 
     Each node has a loop representative."""
-    id: int
+    id: int #does not need to know its own node
     filt_val: float
     type: Literal["leaf", "root", "merge", "update"]            #Special case if points are not in general position: a node can be type "merge" and also be a root, it then still appears in the root list
     loop: Loop                                                  #Loops are saved as list of indices of simplex
-    children: Tuple[int,...]                                    #ids of children
+    children: Set[int]                                    #ids of children
     parent: Optional[int] = None
     #is_root: bool = True  #True if it is the root of a tree, also used for bookkeeping of active loops
+    _barcode_covered: bool = False
 
     def __repr__(self) -> str:
         return f"Node(id={self.id}, f={self.filt_val}, type={self.type})"
     
-@dataclass
 class Bar:
     """ 
     Object which stores a bar in H1 persistence together with a progression of cycle reps.
     Each cycle rep has a an active_start and active_end attribute which is the interval in which this representative is optimal.
     The cycle reps are a strictly decreasing chain w.r.t. inclusion.
     """
-    birth: float
-    death: float
-    _node_progression: tuple[int,...] #nodes saved as node_ids
-    cycle_reps: list[Loop]
 
+    def __init__(self, birth: float, death: float, _node_progression: tuple[int,...], cycle_reps: list[Loop], is_max_tree_bar: Optional[bool]=None):
+        self.birth = birth
+        self.death = death
+        self._node_progression = _node_progression #nodes saved as node_ids
+        self.cycle_reps = cycle_reps
+        self.is_max_tree_bar = is_max_tree_bar
+
+
+    def loop_at_filtration_value(self, filt_val):
+        """Binary search to find active loop at filtration value of this bar."""
+
+        if filt_val < self.birth:
+            raise ValueError(f"Filtration value {filt_val} is too small and not in lifespan of the bar")
+        if filt_val >= self.death:
+            raise ValueError(f"Filtration value {filt_val} is too large and not in lifespan of the bar")
+
+        first = 0
+        last = len(self.cycle_reps)-1
+        best = None
+
+        while first<=last:
+            midpoint = (first+last) // 2
+
+            if self.cycle_reps[midpoint].active_start <= filt_val:
+                best = self.cycle_reps[midpoint]
+                first = midpoint+1
+            else:
+                last = midpoint-1
+
+        if best == None:
+            raise ValueError(f"Binary search in barcode returned {None}, check if bar is empty list")
+        elif best.active_start>filt_val or best.active_end<= filt_val:
+            raise ValueError("Output of binary search incorrect, loop not active at filtration value. Check correctness of loop_at_filtration method.")
+        
+        return best
+    
+    def lifespan(self):
+        """Returns lifespan of bar"""
+        return self.death - self.birth
 
 class LoopForest:
     """Object that stores progression of optimal loops for alpha complex of a point cloud in a forest format"""
 
     def __init__(self, 
-                 point_cloud: List[List[float]]) -> None:
-        self.point_cloud = point_cloud #point cloud is list of 2-dim arrays
+                 point_cloud) -> None:
+        self.point_cloud = np.array(point_cloud) #point cloud is list of 2-dim arrays
 
         self._node_id = itertools.count(1)         #used to assign unique id to each node in the forest
         self._loop_id = itertools.count(1)
@@ -276,19 +323,26 @@ class LoopForest:
         self.loops: Dict[int, Loop] = {}
 
         self._active_node_ids: Set[int] = set()               #used for bookkeeping of active nodes in forest computation algorithm
-        self.roots: List[Node]  = []                    #List of roots of trees in the forest
+        self.roots: Set[int]  = set()                 #List of roots of trees in the forest
 
         self.levels: list[float] = []               #Critical filtration values, might give duplicates in current implementation
 
-        self.alpha_complex = gd.AlphaComplex(points=point_cloud) # pyright: ignore[reportAttributeAccessIssue]
-        self.simplex_tree = self.alpha_complex.create_simplex_tree()
+        self._alpha_complex = gd.AlphaComplex(points=point_cloud) # pyright: ignore[reportAttributeAccessIssue]
+
+        self.simplex_tree = self._alpha_complex.create_simplex_tree()
+
+        #take square root of filtration value since filtation values for alpha complexes are squared in Gudhi
+        if True:
+            for simplex, filtration in self.simplex_tree.get_filtration():
+                self.simplex_tree.assign_filtration(simplex, (filtration**0.5)*2)
+
 
         # Extract s filtration up to order 2
-        self.filtration = [f for f in self.simplex_tree.get_filtration() if len(f[0]) <= 3]  # Keep simplices up to 2D
+        self.filtration = [(simplex,filtration) for simplex, filtration in self.simplex_tree.get_filtration() if len(simplex) <= 3]  # Keep simplices up to 2D
 
-        self.barcode: List[Bar] = []
+        self.barcode: Set[Bar] = set()
 
-
+        #self.compute()
 
     # ---------- builders ---------
 
@@ -308,7 +362,7 @@ class LoopForest:
         triangle_counterclockwise = triangle_loop_counterclockwise(simplex=triangle, point_cloud=self.point_cloud) #orient vertices in triangle counterclockwise
         new_loop = Loop(vertex_list=triangle_counterclockwise, id=lid)
 
-        new_node = Node(id=nid,filt_val=filt_val, type='leaf', children=tuple(), loop=new_loop)
+        new_node = Node(id=nid,filt_val=filt_val, type='leaf', children=set(), loop=new_loop)
 
         self.nodes[nid]=new_node
         self.loops[lid]= new_loop
@@ -328,11 +382,11 @@ class LoopForest:
         self._active_node_ids.remove(node.id)
         node.parent = nid #new root node is parent of input node
 
-        root_node = Node(id=nid, filt_val=filt_val,type='root', loop=node.loop, children=(node.id,))
+        root_node = Node(id=nid, filt_val=filt_val,type='root', loop=node.loop, children={node.id})
 
 
         self.nodes[nid]=root_node
-        self.roots.append(root_node)
+        self.roots.add(root_node.id)
 
         self.levels.append(filt_val)
 
@@ -348,7 +402,7 @@ class LoopForest:
         node1.parent = nid
         node2.parent = nid
 
-        parent_node = Node(id=nid, filt_val=filt_val, type="merge", children=(node1.id,node2.id), loop = parent_loop)
+        parent_node = Node(id=nid, filt_val=filt_val, type="merge", children={node1.id,node2.id}, loop = parent_loop)
         self.nodes[nid]=parent_node
         
         self._active_node_ids.add(nid)
@@ -365,7 +419,7 @@ class LoopForest:
         nid = next(self._node_id)
         node.parent=nid
 
-        update_node = Node(id=nid, filt_val=filt_val, type="update", children=(node.id,),loop=updated_loop)
+        update_node = Node(id=nid, filt_val=filt_val, type="update", children={node.id},loop=updated_loop)
         self.nodes[nid]=update_node
 
         self._active_node_ids.add(nid)
@@ -523,36 +577,29 @@ class LoopForest:
         Intended for parent - child pair with same filtration value 
         """
 
-        #collect new children of parents
-        new_children = [cid for cid in parent.children if cid != child.id] #add children of parent apart from the child we collapse
-        for gcid in child.children:
-            new_children.append(gcid)
-
-        parent.children = tuple(new_children)
+        parent.children.remove(child.id)
+        parent.children.update(child.children)
 
         #re-parent grandchildren
         for gcid in child.children:
-            grandchild = self.nodes[gcid]
-            grandchild.parent = parent.id
+            self.nodes[gcid].parent = parent.id
 
         #remove child node from forest
         del self.nodes[child.id]
 
-
+        n = len(parent.children)
         #adapt type of parent node
-        if len(parent.children)==0:
+        if n==0:
             parent.type="leaf"
 
             #if parent is now isolated point in forest, delete it from forest completely
             if parent.parent == None:
                 del self.nodes[parent.id]
-                self.roots.remove(parent)
-
-        elif len(parent.children)==1:
+                self.roots.remove(parent.id)
+        elif n==1:
             parent.type="update"
         else:
             parent.type="merge"
-
 
         return
 
@@ -573,34 +620,25 @@ class LoopForest:
         print("Reducing the forest")
         reduction_start = time.perf_counter()
 
-        changed = True 
-        while changed: #in practice, this loop runs only once since we iterate over children while adding new children
-            changed = False
+        t0 = time.perf_counter()
+        collapses = 0
 
-             #iterate over snapshot of the nodes in the tree, the nodes dict might be changed each iteration
-            node_list = list(self.nodes.values())
-            for p in node_list:
+        print(f"number of nodes {len(self.nodes.keys())}")
 
-                # p might have been deleted as a child in a previous iteration of this outer loop
-                if p.id not in self.nodes.keys():
-                    continue
+        #iterate over snapshot of the nodes in the tree, the nodes dict might be changed each iteration
+        node_list = list(self.nodes.values())
 
-                for cid in p.children:
-                    child = self.nodes[cid]
-                    if child.filt_val == p.filt_val:
-                        self._collapse_parent_child(parent=p, child=child)
-                        changed = True
+        for p in node_list:
 
-        #sanity check to make sure parent pointers are correct, should no be necessary
-        for n in self.nodes.values():
-            for cid in n.children:
-                ch = self.nodes.get(cid)
-                if ch is None:
-                    continue
-                if ch.parent != n.id:
-                    ch.parent = n.id
-                    print(f"Parent pointer of node with id {cid} was retroactively fixed "
-                        f"(was {ch.parent}, set to {n.id}).")
+            # p might have been deleted as a child in a previous iteration of this outer loop
+            if p.id not in self.nodes.keys():
+                continue
+
+            for cid in p.children.copy():
+                child = self.nodes[cid]
+                if child.filt_val == p.filt_val:
+                    self._collapse_parent_child(parent=p, child=child)
+                    collapses += 1
 
         reduction_time = time.perf_counter() - reduction_start
         print(f"Reduction complete in {reduction_time} sec")
@@ -611,6 +649,8 @@ class LoopForest:
     # This will lead to a node which appears in the root list but has type merge
     # Not a mistake in the code, simply the way the edge case is currently handled
     # -> use node.parent == None to check if a node is a root
+    # If a merge is also a root, then the merge should be split into 2 seperate roots as the merge only lives for 0 time
+    # This is not implemented yet and should not occur for points in general position
 
     # ------ Add active period of each loops ----------
 
@@ -631,7 +671,7 @@ class LoopForest:
 
     # ----- Compute barcode sequence ---------
 
-    def _compute_tree_barcode(self, node: Node, child_id: int):
+    def _compute_tree_barcode_recursive(self, node: Node, child_id: int):
         """ Recursively computes barcode of sub-tree below the input node and the child with child_id"""
 
         #compute longest bar.
@@ -648,7 +688,7 @@ class LoopForest:
         cycle_reps = [self.nodes[id].loop for id in path[1:]]
         
         bar = Bar(birth=node.filt_val, death=max_leaf.filt_val, _node_progression=tuple(path), cycle_reps=cycle_reps )
-        self.barcode.append(bar)
+        self.barcode.add(bar)
 
         #at every merge node, compute barcode of subtree of merge nodes with the other children
         for id in self.leaf_to_node_path(node=node,leaf=max_leaf)[:-2]:   #we do not want to repeat the top node of the tree
@@ -663,23 +703,81 @@ class LoopForest:
                     if cid == id:
                         continue 
                     else:
-                        self._compute_tree_barcode(node=parent_node, child_id=cid)      
+                        self._compute_tree_barcode_recursive(node=parent_node, child_id=cid)      
 
-    def compute_barcode(self):
+    def compute_barcode_recursive(self):
         """ Computes H1 barcode of forest and stores it in self.barcode """
 
         print("Computing Barcode")
         barcode_start = time.perf_counter()
 
         #compute barcode for each tree
-        for root in self.roots:
-            for child_id in root.children:
-                self._compute_tree_barcode(node=root, child_id=child_id)
+        for root_id in self.roots:
+            for child_id in self.nodes[root_id].children:
+                self._compute_tree_barcode_recursive(node=self.nodes[root_id], child_id=child_id)
 
         barcode_time = time.perf_counter() - barcode_start
         print(f"Barcode computation completed in {barcode_time} sec")
 
         return
+
+    def compute_barcode(self):
+        """ Computes H1 barcode of forest and stores it in self.barcode """
+        
+        print("Computing Barcode")
+        barcode_start = time.perf_counter()
+
+        #dict should be ordered with filtration values decreasing since nodes are added in that order
+        if not are_dict_keys_sorted(self.nodes):
+            raise ValueError("Node dict keys are not sorted. This should not happen. Easy fix: sort keys in compute_barcode function (currently not implemented)")
+    
+
+        for id, node in self.nodes.items():
+            #every barcode starts at leaf
+            if len(node.children)>0:
+                continue
+
+            death = node.filt_val
+            node_id_progession = [id]
+            loop_progression = [node.loop]
+            node._barcode_covered=True
+            is_max_tree_bar = True
+
+            if node.parent == None:
+                raise ValueError("Leaf has no Parent, this should not happen")
+            else:
+                parent = self.nodes[node.parent]
+
+            #walk up forest until a root or an already _barcode_covered node is discovered
+            while parent.parent is not None:
+                #check if parent node has already been covered by leaf with larger filtration value
+                if self.nodes[parent.parent]._barcode_covered == True:
+                    is_max_tree_bar = False
+                    break
+                    
+                node_id_progession.append(parent.id)
+                loop_progression.append(parent.loop)
+                parent._barcode_covered = True
+
+                #move to parent of parent
+                parent = self.nodes[parent.parent]
+
+            #loop in root node should be the same as in node below therefore we do not need to add it after last iteration
+            birth = parent.filt_val
+
+            #reverse lists to get progression which is ascending with respect to filtration value
+            bar = Bar(birth=birth,death=death, 
+                      _node_progression = tuple(reversed(node_id_progession)), 
+                      cycle_reps=list(reversed(loop_progression)), 
+                      is_max_tree_bar=is_max_tree_bar)
+            self.barcode.add(bar)
+ 
+
+        barcode_time = time.perf_counter() - barcode_start
+        print(f"Barcode computation completed in {barcode_time} sec")
+    
+        return
+         
 
     
     # ----- plotting tools -------
@@ -732,12 +830,10 @@ class LoopForest:
         if ax is None:
             _, ax = plt.subplots(figsize=figsize)
 
-        st = self.simplex_tree
-
         # --- Collect edges and triangles present at this filtration value
         edges_xy = []      # list of [[x1,y1],[x2,y2]]
         tris_xy = []       # list of [[x1,y1],[x2,y2],[x3,y3]]
-        for simplex, f in st.get_filtration():
+        for simplex, f in self.filtration:
             if f > filt_val:
                 # Filtration is sorted non-decreasing → safe to stop here
                 break
@@ -760,12 +856,14 @@ class LoopForest:
 
         # --- Draw edges
         if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=1.0, colors="0.65", zorder=2, label="edges")
+            edge_coll = LineCollection(edges_xy, linewidths=0.8, colors="0.65", zorder=2, label="edges")
             ax.add_collection(edge_coll)
+
+        
 
         # --- Overlay loops from active nodes at filt_val
         active = self.active_nodes_at(filt_val)
-        cmap = plt.get_cmap("tab10")
+        colors = sns.color_palette("tab20", len(active))
         for idx, node in enumerate(active):
             if node.loop is None or not getattr(node.loop, "vertex_list", None):
                 continue
@@ -781,7 +879,7 @@ class LoopForest:
             segments = [np.array([loop_xy[i], loop_xy[i + 1]]) for i in range(len(loop_xy) - 1)]
 
             # Thicker colored edges along the loop
-            loop_coll = LineCollection(segments, linewidths=2.5, colors=["orange"], zorder=5)
+            loop_coll = LineCollection(segments, linewidths=1.8, colors=[colors[idx]], zorder=5)
             ax.add_collection(loop_coll)
 
             # Optional vertex markers for the loop
@@ -816,26 +914,25 @@ class LoopForest:
         tree_gap_leaves: int = 1,
         check_reduced: bool = True,
         small_on_top: bool = False,
+        threshold: float = 0.0
     ):
         import warnings
 
         if not self.nodes:
             raise ValueError("LoopForest has no nodes to plot.")
 
-        nodes = self.nodes
-        node_ids = set(nodes.keys())
+        all_nodes = self.nodes
+        all_ids = set(all_nodes.keys())
 
         # Recompute roots robustly from the current structure (these are Node objects)
-        roots = [n for n in nodes.values() if n.parent is None or n.parent not in node_ids]
-        if not roots and getattr(self, "roots", None):
-            roots = list(self.roots)
+        all_roots = [n for n in all_nodes.values() if n.parent is None or n.parent not in all_ids]
 
         if check_reduced:
             equal_pairs = [
                 (p.id, c)
-                for p in nodes.values()
+                for p in all_nodes.values()
                 for c in p.children
-                if c in nodes and nodes[c].filt_val == p.filt_val
+                if c in all_nodes and all_nodes[c].filt_val == p.filt_val
             ]
             if equal_pairs:
                 warnings.warn(
@@ -845,18 +942,67 @@ class LoopForest:
 
         bad_direction = [
             (p.id, c)
-            for p in nodes.values()
+            for p in all_nodes.values()
             for c in p.children
-            if c in nodes and nodes[c].filt_val < p.filt_val
+            if c in all_nodes and all_nodes[c].filt_val < p.filt_val
         ]
         if bad_direction:
             warnings.warn(
                 f"{len(bad_direction)} edges have child.filt_val > parent.filt_val."
             )
 
-        roots.sort(key=lambda n: (n.filt_val, n.id))
+        # ---------- threshold filtering (key addition) ----------
+        def _subtree_ids(root_id: int) -> set[int]:
+            """All node ids reachable from (and including) root_id that are present in all_nodes."""
+            stack = [root_id]
+            seen: set[int] = set()
+            while stack:
+                nid = stack.pop()
+                if nid in seen or nid not in all_nodes:
+                    continue
+                seen.add(nid)
+                stack.extend([cid for cid in all_nodes[nid].children if cid in all_nodes])
+            return seen
 
-        # --- positions
+        def _is_leaf_in(sub_ids: set[int], nid: int) -> bool:
+            """Leaf = no children inside this same subgraph."""
+            return not any((cid in sub_ids) for cid in all_nodes[nid].children)
+
+        included_root_ids: list[int] = []
+        included_ids: set[int] = set()
+
+        for r in all_roots:
+            sub_ids = _subtree_ids(r.id)
+            # Identify leaves within this subgraph
+            leaves = [nid for nid in sub_ids if _is_leaf_in(sub_ids, nid)]
+            root_val = float(all_nodes[r.id].filt_val)
+            max_leaf_delta = max((abs(float(all_nodes[l].filt_val) - root_val) for l in leaves), default=0.0)
+
+            if max_leaf_delta > float(threshold):
+                included_root_ids.append(r.id)
+                included_ids.update(sub_ids)
+
+        if threshold <= 0.0:
+            # No filtering requested: include everything
+            nodes = all_nodes
+            roots = sorted(all_roots, key=lambda n: (n.filt_val, n.id))
+        else:
+            if not included_ids:
+                # Nothing to plot under this threshold — return an empty/annotated axes.
+                if ax is None:
+                    _, ax = plt.subplots(figsize=(8, 6))
+                ax.set_title(f"LoopForest dendrogram (y = filt_val) — no trees exceed threshold {threshold}")
+                ax.set_axis_off()
+                if show:
+                    plt.show()
+                return ax
+            nodes = {nid: all_nodes[nid] for nid in included_ids}
+            roots = [all_nodes[rid] for rid in included_root_ids]
+            roots.sort(key=lambda n: (n.filt_val, n.id))
+
+        node_ids = set(nodes.keys())
+
+        # ---------- positions ----------
         x: dict[int, float] = {}
         y: dict[int, float] = {n.id: float(n.filt_val) for n in nodes.values()}
         visited: set[int] = set()
@@ -883,17 +1029,17 @@ class LoopForest:
         # Lay out each tree; insert spacing between trees
         for i, r in enumerate(roots):
             start_before = leaf_counter
-            _assign_x(r.id)  # <-- pass the integer id
+            _assign_x(r.id)
             if i != len(roots) - 1 and leaf_counter > start_before:
                 leaf_counter += tree_gap_leaves
 
-        # Place any stray components (shouldn't happen, but be safe)
+        # Place any stray components (shouldn't happen, but be safe) — within the filtered set only
         for nid in list(node_ids):
             if nid not in x:
                 _assign_x(nid)
                 leaf_counter += tree_gap_leaves
 
-        # --- draw
+        # ---------- draw ----------
         if ax is None:
             _, ax = plt.subplots(figsize=(8, 6))
 
@@ -933,7 +1079,10 @@ class LoopForest:
 
         ax.set_xlabel("leaf order")
         ax.set_ylabel("filt_val (y)")
-        ax.set_title("LoopForest dendrogram (y = filt_val)")
+        title = "LoopForest dendrogram (y = filt_val)"
+        if threshold > 0.0:
+            title += f" — threshold > {threshold}"
+        ax.set_title(title)
         ax.margins(x=0.05, y=0.05)
         ax.grid(False)
 
@@ -958,7 +1107,7 @@ class LoopForest:
         xlabel: str = "filtration value",
     ):
         """
-        Plot a 1D barcode from self.barcode (a list[Bar]).
+        Plot a 1D barcode from self.barcode (a set[Bar]).
         Each Bar contributes a horizontal segment from birth to death.
         If death is +inf, an arrow is drawn to the right.
 
@@ -1059,21 +1208,87 @@ class LoopForest:
 
         return ax
 
+    #ChatGPT plotting function
+    def plot_loops(self, vertex_loops: list[list[int]], title = None):
+        """
+        Plot a 2D point cloud and a set of closed loops (polylines) over it.
+
+        Parameters
+        ----------
+
+        loops : list[list[int]] or list[np.ndarray]
+            Each loop is a list of indices into `point_cloud`. The path is closed:
+            the last vertex connects back to the first.
+
+        Returns
+        -------
+        fig, ax : matplotlib Figure and Axes
+            Handles to the created figure and axes.
+        """
+
+        point_cloud = self.point_cloud
+
+        if not isinstance(point_cloud, np.ndarray):
+            point_cloud = np.asarray(point_cloud)
+        if point_cloud.ndim != 2 or point_cloud.shape[1] != 2:
+            raise ValueError("point_cloud must be an array of shape (N, 2).")
+
+        fig, ax = plt.subplots()
+        fig.set_size_inches(10,10)
+        ax.scatter(point_cloud[:, 0], point_cloud[:, 1], s=2, c="k", alpha=0.8, label="points")
+
+        # Color map to distinguish loops
+        colors = sns.color_palette("tab20", len(vertex_loops))
+
+        for i, loop in enumerate(vertex_loops or []):
+            if loop is None or len(loop) == 0:
+                continue
+            idx = np.asarray(loop, dtype=int)
+
+            # Basic validation: ensure indices are in range
+            if np.any(idx < 0) or np.any(idx >= len(point_cloud)):
+                raise IndexError(f"Loop {i} contains out-of-range indices.")
+
+            # Close the loop by appending the first index at the end
+            closed_idx = np.concatenate([idx, idx[:1]])
+            xy = point_cloud[closed_idx]
+
+            color = colors[i]
+            ax.plot(xy[:, 0], xy[:, 1], "-", lw=2, color=color, label=f"loop {i+1}")
+
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        if title is None:
+            ax.set_title("Point Cloud with Loops")
+        else:
+            ax.set_title(title) 
+
+        ax.grid(True, linestyle=":", alpha=0.5)
+
+        plt.show()
+
+        return fig, ax
 
 #------------ helper functions which use classes ---------------
 
 
 # ---------- Compute Loop Forest -----------------
-def compute_loop_forest(point_cloud, reduce: bool = False, compute_barcode= False):
+def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True):
     """ 
     Computes LoopForest object for a point cloud.
     reduce = True means that multiple changes at the same filtration value is collapsed to a single node.
     compute_barcode = True computes barcodes and stores it in self.barcode as list of bar objects
     """
-    loop_forest = LoopForest(point_cloud=point_cloud)
-    
-    
+
     overall_start = time.perf_counter()
+
+    loop_forest = LoopForest(point_cloud=point_cloud)
+
+    alpha_complex_time = time.perf_counter()-overall_start
+    print(f"Alpha complex generated in {alpha_complex_time}")
+
+    loop_forest_start = time.perf_counter()
 
     edge_loop_dict = {}
 
@@ -1192,12 +1407,11 @@ def compute_loop_forest(point_cloud, reduce: bool = False, compute_barcode= Fals
             else:
                 raise ValueError("Error, L is of the wrong form")
 
-    overall_time = time.perf_counter() - overall_start
+    loop_forest_time = time.perf_counter() - loop_forest_start
 
-    print(f"Forest succesfully computed in {overall_time} sec")
+    print(f"Forest succesfully computed in {loop_forest_time} sec")
 
-    
-
+    #compute where each loop is active
     loop_forest._compute_loop_activity()
 
     if reduce:
