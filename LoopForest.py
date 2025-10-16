@@ -1,14 +1,18 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Literal, Iterable, Set
+from typing import Dict, List, Optional, Tuple, Literal, Iterable, Callable
+from numpy.typing import NDArray
 import itertools
 import numpy as np
 import gudhi as gd
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.axes
 from matplotlib.collections import LineCollection, PolyCollection
 import time
 import seaborn as sns
+import bisect
+from bisect import bisect_right
 
 # ------- helper functions --------------
 
@@ -57,9 +61,9 @@ def triangle_loop_counterclockwise(simplex, point_cloud):
     if cross < 0:
         simplex_sorted[1], simplex_sorted[2] = simplex_sorted[2], simplex_sorted[1]
 
-    return simplex_sorted.tolist()
+    return simplex_sorted
 
-def merge_index_list_loops(loop1: List[int],loop2: List[int], edge:List[int]):
+def merge_index_list_loops(loop1: NDArray[np.int32],loop2: NDArray[np.int32], edge:List[int]):
     """ 
     Merges two loops, given as list of indices, which both contain edge in oppossing orientation.
     Edge is pair of indices.
@@ -95,11 +99,11 @@ def merge_index_list_loops(loop1: List[int],loop2: List[int], edge:List[int]):
     #loop = loop1[:idx0] + loop2[idx1:] + loop2[:idx1-1] + loop1[ idx0  :]
     
     if idx0 == len(loop1)-1 and idx1==0: # type: ignore
-        loop = loop1[1:]+ loop2[idx1+1:] + loop2[:idx1] # type: ignore
+        loop = np.concatenate((loop1[1:], loop2[idx1+1:], loop2[:idx1])) # type: ignore
     elif idx0 == len(loop1)-1 and idx1!=0: # type: ignore #handle edge case that we have the last index for idx0
-        loop = loop1+ loop2[idx1+1:] + loop2[:idx1-1]  # type: ignore
+        loop = np.concatenate((loop1, loop2[idx1+1:], loop2[:idx1-1]))  # type: ignore
     else: #common case
-        loop = loop1[:idx0] + loop2[idx1:] + loop2[:idx1] + loop1[ idx0+2  :] # type: ignore
+        loop = np.concatenate((loop1[:idx0], loop2[idx1:], loop2[:idx1], loop1[ idx0+2  :])) # type: ignore
 
     #print(F'resulting loop {loop}')
     if len(loop) != len(loop1)+len(loop2)-2:
@@ -122,13 +126,14 @@ def contains_pair_in_order(lst, a, b):
             return True
     return False
 
-# canonical key: sorted tuple of vertex ids so orientation doesn’t matter
-def key(simplex): 
+def key(simplex):
+    """ canonical key: return sorted tuple of vertex ids so orientation doesn’t matter """ 
     return tuple(sorted(simplex))
 
-def split_vertex_loop_with_double_edge(edge, loop):
+def split_vertex_loop_with_double_edge(edge, loop: NDArray[np.int32]):
     """splits a loop containg edge twice into two disjoint loops.
     return two loops, one of which might be empty"""
+
     if not (contains_pair_in_order(lst=loop, a=edge[0], b=edge[1]) and contains_pair_in_order(lst=loop, a=edge[1], b=edge[0])):
         raise ValueError("Input loop does not contain edge in both directions")
     for idx1 in range(len(loop)):
@@ -146,7 +151,7 @@ def split_vertex_loop_with_double_edge(edge, loop):
     #deal with edge case where we the edge [a,b] appears as [a,b,a]
     #in this case idx1 is at b and idx2 is the one after the second a 
     if idx2-idx1 == 2: # type: ignore
-        loop1 = loop[:idx1] + loop[idx2:] # type: ignore
+        loop1 = np.concatenate((loop[:idx1], loop[idx2:])) # type: ignore
         loop2 = []
         #print(f"non-trivial loop returned: {loop1}")
         return loop1, loop2
@@ -164,7 +169,7 @@ def split_vertex_loop_with_double_edge(edge, loop):
         loop2 = loop[idx2:len(loop)-1]  # type: ignore
     
     else:
-        loop2 = loop[idx2:] + loop[:idx1-1] # type: ignore
+        loop2 = np.concatenate((loop[idx2:], loop[:idx1-1])) # type: ignore
 
     #Loop is only a single vertex does not count as loop an will be treated as empty
     if len(loop1)==1:
@@ -181,18 +186,18 @@ def split_vertex_loop_with_double_edge(edge, loop):
     return loop1, loop2
 
 def loop_xmax(loop, point_cloud):
-    return max(point_cloud[idx][0] for idx in loop)
+    return point_cloud[loop, 0].max()
 
 def loop_xmin(loop, point_cloud):
-    return min(point_cloud[idx][0] for idx in loop)
+    return point_cloud[loop, 0].min()
 
 def loop_ymax(loop, point_cloud):
-    return max(point_cloud[idx][1] for idx in loop)
+    return point_cloud[loop, 1].max()
 
 def loop_ymin(loop, point_cloud):
-    return max(point_cloud[idx][1] for idx in loop)
+    return point_cloud[loop, 1].min()
 
-def find_outer_loop(vertex_loop:List[int] ,edge:List[int], point_cloud):
+def find_outer_loop(vertex_loop:NDArray[np.int32] ,edge:List[int], point_cloud):
     """ Computes surviving loop in case of double edge in a single loop, first returned loop is survivor loop"""
     #print("tiebreak activated")
     loop1, loop2 = split_vertex_loop_with_double_edge(edge=edge, loop=vertex_loop)
@@ -235,17 +240,20 @@ def are_dict_keys_sorted(d):
         prev = k
     return True
 
+
+
+
 # ----------------- class defintions ----------------------
 class Loop:
     """
     Loop saved as a list of vertex indices. 
     Point coordinates can be accessed via point_cloud[vertex] where vertex is in vertex_list and point_cloud is the list of points saved in the loop forest
     """
-    def __init__(self, vertex_list: List[int], id: int):
-        self.vertex_list: List[int] = vertex_list
+    def __init__(self, vertex_list: NDArray[np.int32], id: int):
+        self.vertex_list: NDArray[np.int32] = np.array(vertex_list).astype(np.int32)
         self.id: int = id
-        self.active_start: Optional[float] = None           #[active_start, active_end) is interval in which the loop is active as an optimal cycle rep
-        self.active_end: Optional[float] = None              
+        self.active_start: float = float("-inf")           #[active_start, active_end) is interval in which the loop is active as an optimal cycle rep
+        self.active_end: float = float("-inf")                 
 
 @dataclass
 class Node:
@@ -255,7 +263,7 @@ class Node:
     filt_val: float
     type: Literal["leaf", "root", "merge", "update"]            #Special case if points are not in general position: a node can be type "merge" and also be a root, it then still appears in the root list
     loop: Loop                                                  #Loops are saved as list of indices of simplex
-    children: Set[int]                                    #ids of children
+    children: set[int]                                    #ids of children
     parent: Optional[int] = None
     #is_root: bool = True  #True if it is the root of a tree, also used for bookkeeping of active loops
     _barcode_covered: bool = False
@@ -314,35 +322,52 @@ class LoopForest:
     """Object that stores progression of optimal loops for alpha complex of a point cloud in a forest format"""
 
     def __init__(self, 
-                 point_cloud) -> None:
+                 point_cloud,
+                 compute = True,
+                 reduce: bool = True,
+                 compute_barcode: bool = True,
+                 print_info: bool = False) -> None:
         self.point_cloud = np.array(point_cloud) #point cloud is list of 2-dim arrays
+
+        #check if point cloud has correct shape
+        if not (self.point_cloud.ndim == 2 and self.point_cloud.shape[1] == 2):
+            raise TypeError("Point cloud input has wrong shape, point cloud should be gives as array containing 2dim vectors")
 
         self._node_id = itertools.count(1)         #used to assign unique id to each node in the forest
         self._loop_id = itertools.count(1)
         self.nodes: Dict[int, Node] = {}
         self.loops: Dict[int, Loop] = {}
 
-        self._active_node_ids: Set[int] = set()               #used for bookkeeping of active nodes in forest computation algorithm
-        self.roots: Set[int]  = set()                 #List of roots of trees in the forest
+        self._active_node_ids: set[int] = set()               #used for bookkeeping of active nodes in forest computation algorithm
+        self.roots: set[int]  = set()                 #List of roots of trees in the forest
 
         self.levels: list[float] = []               #Critical filtration values, might give duplicates in current implementation
 
+        start = time.perf_counter()
         self._alpha_complex = gd.AlphaComplex(points=point_cloud) # pyright: ignore[reportAttributeAccessIssue]
-
         self.simplex_tree = self._alpha_complex.create_simplex_tree()
+        alpha_complex_time = time.perf_counter()-start
+        if print_info:
+            print(f"Alpha complex generated in {alpha_complex_time}")
 
+        start = time.perf_counter()
         #take square root of filtration value since filtation values for alpha complexes are squared in Gudhi
-        if True:
-            for simplex, filtration in self.simplex_tree.get_filtration():
-                self.simplex_tree.assign_filtration(simplex, (filtration**0.5)*2)
-
-
+        for simplex, filtration in self.simplex_tree.get_filtration():
+            self.simplex_tree.assign_filtration(simplex, (filtration**0.5)*2)
+        
         # Extract s filtration up to order 2
         self.filtration = [(simplex,filtration) for simplex, filtration in self.simplex_tree.get_filtration() if len(simplex) <= 3]  # Keep simplices up to 2D
+        filtration_time = time.perf_counter()-start
+        if print_info:
+            print(f"Filtration processed in {filtration_time}")
 
-        self.barcode: Set[Bar] = set()
+        self.barcode: set[Bar] = set()
 
-        #self.compute()
+        #compute forest
+        if compute:
+            self._compute_forest(reduce=reduce, compute_barcode=compute_barcode, print_info = print_info)
+            self.reduced = reduce
+        
 
     # ---------- builders ---------
 
@@ -443,7 +468,7 @@ class LoopForest:
     
 
     # ---- helper functions ------
-    def nodes_with_loop_containing_edge(self ,edge: List[int], node_ids: Set[int]) -> List[Node]:
+    def nodes_with_loop_containing_edge(self ,edge: List[int], node_ids: set[int]) -> List[Node]:
         """
         Input: List of node ids and edge as pair of indexes
 
@@ -569,6 +594,150 @@ class LoopForest:
         L = [ self.get_root( self.nodes[id] ) for id in node_id_list ]
         return L
 
+
+    # ----- compute the forest ----------
+
+    def _compute_forest(self, reduce = True, compute_barcode = True, print_info: bool = False):
+        """ 
+        Computes LoopForest object for a point cloud.
+        reduce = True means that multiple changes at the same filtration value is collapsed to a single node.
+        compute_barcode = True computes barcodes and stores it in self.barcode as list of bar objects
+        """
+
+        loop_forest_start = time.perf_counter()
+
+        edge_loop_dict = {}
+
+        #simplices is already ordered in ascending order by number of simplices 
+        for simplex, filt_val in reversed(self.filtration):
+
+            if len(simplex)<=1:
+                continue
+            
+            if len(simplex) == 3:
+                new_node = self.add_leaf( triangle=simplex, filt_val=filt_val)
+
+                faces = list(itertools.combinations(simplex, 2))
+                for edge in faces:
+                    if key(edge) in edge_loop_dict:
+                        edge_loop_dict[key(edge)].append(new_node.id)
+                    else:
+                        edge_loop_dict[key(edge)] = [new_node.id]
+
+            if len(simplex) == 2:
+                #L is loops containing nodes, can be of the form [],[l1], [l1,l2], [l1,l1]
+                #L is active nodes over L_tmp
+
+                #If key exists, get its value and remove it
+                #if key does not exists, get []
+                L_tmp_ids = edge_loop_dict.pop(key(simplex), [])
+
+                L = self._update_node_list(L_tmp_ids)
+
+
+                #if no loop contains edge, nothing happens
+                if len(L) == 0:
+                    continue
+
+                #if edge is only contained in a single loop and appears only once in that loop once, remove that loop from the active loops 
+                elif len(L) == 1:
+                    #update the loop dict for all edges which very contained in the loop we just removed
+                    vertex_loop = L[0].loop.vertex_list
+                    for i in range(len(vertex_loop)):
+
+                            edge = [vertex_loop[i-1], vertex_loop[i]]
+
+
+                            L_edge_tmp = edge_loop_dict.pop(key(edge), None)
+                            if L_edge_tmp is None:
+                                continue
+
+                            L_edge = self._update_node_list(L_edge_tmp)
+
+                            if len(L_edge)> 2:
+                                raise ValueError("L_edge too long in loop removal process")
+
+                            if len(L_edge)==1:
+                                continue
+                            elif L_edge[0] != L[0]:
+                                edge_loop_dict[key(edge)] = [L_edge[0].id]
+                            elif L_edge[1] != L[0]: 
+                                edge_loop_dict[key(edge)] = [L_edge[1].id]
+                            else:
+                                continue
+                                
+                    self.make_root(node=L[0],filt_val=filt_val)
+
+                    continue
+
+                elif len(L) == 2 and L[0]!=L[1]:
+                    parent_loop = self.merge_loops(loop1=L[0].loop ,loop2= L[1].loop, edge=simplex) 
+                    self.merge_nodes( node1=L[0], node2=L[1], parent_loop=parent_loop, filt_val=filt_val)
+                    if not loop_in_filtration_check(parent_loop.vertex_list, simplex_tree=self.simplex_tree, filt_value=filt_val):
+                            print('edge', simplex)
+                            print('edge dict entry')
+                            print('filtration value', filt_val)
+                            print(f'first loop', L[0].loop)
+                            print(f'second loop', L[1].loop)
+                            raise ValueError("Loop not in simplex, Loop concat Case")
+
+
+                elif len(L) == 2 and L[0]==L[1]:
+                    #Same edge is contained in a loop in both directions, we update the loop
+                    vertex_loop, redundant_vertices = find_outer_loop(edge=simplex,
+                                                    vertex_loop=L[0].loop.vertex_list, 
+                                                    point_cloud=self.point_cloud)
+                    if not loop_in_filtration_check(vertex_loop, simplex_tree=self.simplex_tree, filt_value=filt_val):
+                                print('edge', simplex)
+                                print(f'starting loop', L[0].loop)
+                                print(f'outer loop', vertex_loop)
+                                raise ValueError("Loop not in simplex, Tiebreak Case")
+                    
+                    #update dict entries for edges from the redundant loop
+                    if len(redundant_vertices)>=2:
+                        for i in range(len(redundant_vertices)):
+                            edge = [redundant_vertices[i-1], redundant_vertices[i]]
+
+                            L_edge_tmp = edge_loop_dict.pop(key(edge), None)
+                            if L_edge_tmp is None:
+                                continue
+
+                            L_edge = self._update_node_list(L_edge_tmp)
+
+                            if len(L_edge)> 2:
+                                raise ValueError("L_edge too long in loop removal process")
+
+                            if len(L_edge)==1:
+                                continue
+                            elif L_edge[0] != L[0]:
+                                edge_loop_dict[key(edge)] = [L_edge[0].id]
+                            elif L_edge[1] != L[0]: 
+                                edge_loop_dict[key(edge)] = [L_edge[1].id]
+                            else:
+                                continue
+
+                    updated_loop = self.generate_loop(vertex_loop)
+
+                    self.update_node(node=L[0], updated_loop=updated_loop, filt_val=filt_val)
+
+                else:
+                    raise ValueError("Error, L is of the wrong form")
+
+        loop_forest_time = time.perf_counter() - loop_forest_start
+        if print_info:
+            print(f"Forest succesfully computed in {loop_forest_time} sec")
+
+        #compute where each loop is active
+        self._compute_loop_activity()
+
+        if reduce:
+            self._reduce_forest(print_info = print_info)
+
+        if compute_barcode:
+            self.compute_barcode(print_info = print_info)
+        
+        return
+
     # ----- reduce forest (collapses trivial edges which happen at the same filtration value) -------------
 
     def _collapse_parent_child(self, parent: Node, child: Node):
@@ -603,7 +772,7 @@ class LoopForest:
 
         return
 
-    def _reduce_forest(self):
+    def _reduce_forest(self, print_info: bool = False):
         """
         Reduce the forest by collapsing every parent–child pair with equal filtration value.
 
@@ -617,13 +786,14 @@ class LoopForest:
         - For every grandchild g in c.children, set g.parent = p.id.
         Repeats until no collapsible edges remain.
         """
-        print("Reducing the forest")
+        if print_info:
+            print("Reducing the forest")
         reduction_start = time.perf_counter()
 
-        t0 = time.perf_counter()
         collapses = 0
 
-        print(f"number of nodes {len(self.nodes.keys())}")
+        if print_info:
+            print(f"Number of nodes before reduction: {len(self.nodes.keys())}")
 
         #iterate over snapshot of the nodes in the tree, the nodes dict might be changed each iteration
         node_list = list(self.nodes.values())
@@ -641,8 +811,10 @@ class LoopForest:
                     collapses += 1
 
         reduction_time = time.perf_counter() - reduction_start
-        print(f"Reduction complete in {reduction_time} sec")
-
+        if print_info:
+            print(f"Reduction complete in {reduction_time} sec")
+            print(f"Number of nodes after reduction: {len(self.nodes.keys())}")
+        
         return
 
     # If we have multiple edges appearing at the same filtration value, we might get a root node which is also a merge in the reduction process
@@ -671,6 +843,7 @@ class LoopForest:
 
     # ----- Compute barcode sequence ---------
 
+    #recursive barcode not relevant anymore
     def _compute_tree_barcode_recursive(self, node: Node, child_id: int):
         """ Recursively computes barcode of sub-tree below the input node and the child with child_id"""
 
@@ -705,6 +878,7 @@ class LoopForest:
                     else:
                         self._compute_tree_barcode_recursive(node=parent_node, child_id=cid)      
 
+    #recursive barcode not relevant anymore
     def compute_barcode_recursive(self):
         """ Computes H1 barcode of forest and stores it in self.barcode """
 
@@ -721,10 +895,11 @@ class LoopForest:
 
         return
 
-    def compute_barcode(self):
+    def compute_barcode(self, print_info: bool = False):
         """ Computes H1 barcode of forest and stores it in self.barcode """
         
-        print("Computing Barcode")
+        if print_info:
+            print("Computing Barcode")
         barcode_start = time.perf_counter()
 
         #dict should be ordered with filtration values decreasing since nodes are added in that order
@@ -774,11 +949,13 @@ class LoopForest:
  
 
         barcode_time = time.perf_counter() - barcode_start
-        print(f"Barcode computation completed in {barcode_time} sec")
+        if print_info:
+            print(f"Barcode computation completed in {barcode_time} sec")
     
         return
          
-
+    def max_bar(self):
+        return max(self.barcode, key=lambda bar: bar.lifespan())
     
     # ----- plotting tools -------
 
@@ -865,7 +1042,8 @@ class LoopForest:
         active = self.active_nodes_at(filt_val)
         colors = sns.color_palette("tab20", len(active))
         for idx, node in enumerate(active):
-            if node.loop is None or not getattr(node.loop, "vertex_list", None):
+            vlist = getattr(node.loop, "vertex_list", None)
+            if node.loop is None or vlist is None or vlist.size == 0:
                 continue
             vs = list(node.loop.vertex_list)
             if len(vs) < 2:
@@ -1209,7 +1387,10 @@ class LoopForest:
         return ax
 
     #ChatGPT plotting function
-    def plot_loops(self, vertex_loops: list[list[int]], title = None):
+    def plot_loops(
+            self, 
+            vertex_loops: list[list[int]], 
+            title = None):
         """
         Plot a 2D point cloud and a set of closed loops (polylines) over it.
 
@@ -1270,158 +1451,367 @@ class LoopForest:
 
         return fig, ax
 
+
+    #------- function graph plotting tools for generalized landscape ----------------
+
+    Interval = Tuple[float, float]
+    Item = Tuple[Interval, Loop]
+
+    def _build_piecewise_function(
+        self,
+        bar: Bar,
+        polyhedral_path_func: Callable[[NDArray], float],
+        baseline: float = 0.0,
+        *,
+        eps: float = 1e-12
+    ) -> Callable[[float], float]:
+        """
+        Precompute a non-overlapping (except boundaries) piecewise-constant function.
+        
+        Returns f(x) that equals interesting_quantity(obj) on [a, b] for each interval [a,b],
+        and `baseline` elsewhere.
+        """
+
+        if bar not in self.barcode:
+            raise ValueError("Bar is not in barcode of loop forest")
+
+        # Build arrays for binary search
+        starts = [loop.active_start for loop in bar.cycle_reps]           # ascending
+        ends   = [loop.active_end for loop in bar.cycle_reps]           # same order
+        vals   = [polyhedral_path_func(self.point_cloud[loop.vertex_list]) for loop in bar.cycle_reps]
+
+        def f(x: float) -> float:
+            # Find rightmost interval whose start <= x
+            i = bisect.bisect_right(starts, x) - 1 # pyright: ignore[reportArgumentType]
+            if i >= 0 and x <= ends[i] + eps:         # pyright: ignore[reportOptionalOperand] # include right boundary
+                # If x == start of i+1 (touching boundary), bisect_right ensures we choose the left interval.
+                return vals[i]
+            return baseline
+
+        return f
+
+    def plot_barcode_measurement(
+            self,
+            polyhedral_path_func: Callable[[NDArray], float],
+            bar: Optional[Bar] = None,
+            x_range: Optional[Tuple[float, float]] = None,
+            y_range: Optional[Tuple[float, float]] = None,
+            *,
+            baseline: float = 0.0,
+            ax = None,
+            linewidth: float = 2.0,
+            label: Optional[str] = None,
+        ):
+        """
+        Plot the step graph of the piecewise-constant function defined by `items`.
+        - `x_range=(xmin, xmax)` restricts the plot; if None, it's inferred from the data.
+        - Regions not covered by any interval are drawn at `baseline` (default 0).
+        If no bar is given, bar with max length is used.
+        """
+        if bar is None:
+            bar = self.max_bar()
+
+        if bar not in self.barcode:
+            raise ValueError("Bar is not in barcode of loop forest")
+
+        # Build the evaluator
+        f = self._build_piecewise_function(bar, polyhedral_path_func, baseline)
+
+        if x_range is not None:
+            xmin, xmax = map(float, x_range)
+            if xmax <= xmin:
+                raise ValueError("x_range must be (xmin, xmax) with xmax > xmin.")
+        else:
+            start= bar.cycle_reps[0].active_start
+            end = bar.cycle_reps[-1].active_end
+            xmin = start - 0.05 * (end - start)
+            xmax = end + 0.05 * (end - start)
+
+        # compute break points of piecewise constant function
+        breaks = {xmin, xmax} #Using breaks as set and then sorting is inefficient since bar is already sorted but I currently dont care
+        for loop in bar.cycle_reps:
+            # Only keep endpoints that intersect the chosen window
+            if loop.active_end >= xmin and loop.active_start <= xmax:
+                breaks.add(max(loop.active_start, xmin))
+                breaks.add(min(loop.active_end, xmax))
+
+        xs = sorted(breaks)
+        if len(xs) < 2:
+            # Degenerate range; still produce an empty baseline line
+            xs = [xmin, xmax]
+
+        # Compute y on each half-open slice [x_k, x_{k+1})
+        ys = []
+        for i in range(len(xs) - 1):
+            mid = (xs[i] + xs[i + 1]) * 0.5
+            ys.append(f(mid))
+        # Append last y to match step-api length
+        ys.append(ys[-1] if ys else baseline)
+
+        # Plot
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.figure
+
+        ax.step(xs, ys, where="post", linewidth=linewidth, label=label or "piecewise")
+        ax.set_xlim(xmin, xmax)
+        if y_range is not None:
+            ax.set_ylim(y_range[0],y_range[1])
+        #ax.axhline(baseline, linestyle="--", linewidth=1)
+        ax.set_xlabel("radius")
+        ax.set_ylabel("value")
+        if label:
+            ax.legend()
+        ax.grid(True, alpha=0.3)
+        return ax
+
+    #ChatGPT function
+    def build_convolution_with_indicator(
+            self,
+            starts: List[float],
+            ends: List[float],
+            vals: List[float],
+            a: float,
+            b: float,
+            *,
+            tol: float = 1e-12
+    ) -> Tuple[Callable[[float], float], List[float], List[float]]:
+        """
+        Compute h(x) = (f * 1_[a,b])(x) where:
+        - f is piecewise-constant: f(t) = vals[i] on [starts[i], ends[i]] and 0 elsewhere
+        - 1_[a,b] is the indicator of [a, b] (assumes a <= b)
+
+        Returns:
+        (h, xs, ys)
+            h  : Callable that evaluates the convolution in O(log n) time via linear interpolation.
+            xs : Sorted x 'knot' locations where the slope can change (event points).
+            ys : The exact h(x) values at those knots (piecewise-linear nodes).
+
+        Correctness sketch:
+        h'(x) = f(x-a) - f(x-b). Each interval [s,e] of f contributes slope jumps of ±v
+        at x ∈ {a+s, a+e, b+s, b+e}. Between events, h has constant slope, hence is linear.
+        We start from 0 at the left boundary (the sliding window is fully left of support).
+
+        Runtime:
+        Building events: O(n)
+        Sorting events:  O(n log n) with at most 4n unique points
+        One sweep:       O(n)
+        Evaluating h(x): O(log n) per query (binary search on xs)
+        """
+        if b < a:
+            raise ValueError("Require a <= b for the indicator [a,b].")
+        if not (len(starts) == len(ends) == len(vals)):
+            raise ValueError("starts, ends, vals must have equal length.")
+        n = len(starts)
+        if n == 0:
+            # No support: convolution is identically zero
+            def h_zero(_: float) -> float: return 0.0
+            return h_zero, [], []
+
+        # Helper to merge nearly identical event keys to improve numerical stability
+        def _quantize(x: float) -> float:
+            if tol <= 0:
+                return x
+            # snap to nearest multiple of tol
+            return round(x / tol) * tol
+
+        # Build slope-change "events"
+        events = {}  # x -> delta_slope
+        def add_event(x: float, delta: float):
+            qx = _quantize(x)
+            events[qx] = events.get(qx, 0.0) + float(delta)
+
+        for s, e, v in zip(starts, ends, vals):
+            if e < s:
+                raise ValueError(f"Encountered interval with end < start: [{s}, {e}].")
+            if abs(v) < tol or abs(e - s) < tol:
+                # Zero value or degenerate interval contributes nothing
+                continue
+            add_event(a + s, +v)
+            add_event(a + e, -v)
+            add_event(b + s, -v)
+            add_event(b + e, +v)
+
+        if not events:
+            def h_zero(_: float) -> float: return 0.0
+            return h_zero, [], []
+
+        xs = sorted(events.keys())
+        # We know h(x)=0 for x < xs[0] (the window [x-b, x-a] is fully left of f’s support).
+        ys: List[float] = [0.0]
+
+        # Sweep: on (xs[i], xs[i+1]) the slope is constant; update slope at the left endpoint.
+        slope = 0.0
+        slopes_per_interval: List[float] = []
+        for i in range(len(xs) - 1):
+            x_i, x_next = xs[i], xs[i + 1]
+            slope += events[x_i]              # slope just to the right of x_i
+            slopes_per_interval.append(slope) # slope on (x_i, x_{i+1})
+            y_next = ys[-1] + slope * (x_next - x_i)
+            ys.append(y_next)
+
+        # Consume the last event to bring slope back (should return to ~0)
+        slope += events[xs[-1]]
+        # Optional check (tolerant to rounding)
+        if not math.isclose(slope, 0.0, rel_tol=1e-9, abs_tol=1e-9):
+            # Not fatal; tiny residue can appear from floating noise
+            pass
+
+        # Build a fast evaluator by linear interpolation on the piecewise-linear segments
+        def h(x: float) -> float:
+            if not xs:
+                return 0.0
+            if x <= xs[0] or x >= xs[-1]:
+                return 0.0
+            i = bisect_right(xs, x) - 1
+            # segment i is (xs[i], xs[i+1]) with slope slopes_per_interval[i]
+            return ys[i] + slopes_per_interval[i] * (x - xs[i])
+
+        return h, xs, ys
+
+    #ChatGPT function
+    def plot_convolution(
+            self,
+            starts: List[float],
+            ends: List[float],
+            vals: List[float],
+            a: float,
+            b: float,
+            *,
+            tol: float = 1e-12,
+            ax: Optional["matplotlib.axes.Axes"] = None,
+            title: Optional[str] = None,
+        ):
+        """
+        Convenience plotting wrapper. Uses the exact piecewise-linear knots (no sampling).
+
+        Returns (ax, (h, xs, ys)) so you can reuse the callable and knots.
+        """
+        import matplotlib.pyplot as plt
+
+        h, xs, ys = self.build_convolution_with_indicator(starts, ends, vals, a, b, tol=tol)
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        if xs:
+            ax.plot(xs, ys, linewidth=2)
+            # Optional: show zero tails to make the shape clear
+            left_tail = xs[0] - 0.05 * (xs[-1] - xs[0])
+            right_tail = xs[-1] + 0.05 * (xs[-1] - xs[0])
+            ax.plot([left_tail, xs[0]], [0.0, 0.0], linestyle="--", linewidth=1)
+            ax.plot([xs[-1], right_tail], [ys[-1], 0.0], linestyle="--", linewidth=1)
+        else:
+            # identically zero
+            ax.axhline(0.0, linestyle="--", linewidth=1)
+
+        ax.set_xlabel("radius")
+        ax.set_ylabel(r"$(f * \mathbf{1}_{[a,b]})(x)$")
+        if title is not None:
+            ax.set_title(title)
+        ax.grid(True, alpha=0.3)
+
+        return ax, (h, xs, ys)
+
+    def compute_generalized_interval_landscape(self, polyhedral_path_func: Callable[[NDArray],float], bar: Optional[Bar]=None,):
+
+        if bar is None:
+            bar = self.max_bar()
+
+        if bar not in self.barcode:
+            raise ValueError("Bar is not in barcode of loop forest")
+
+        starts = [loop.active_start for loop in bar.cycle_reps]
+        ends   = [loop.active_end   for loop in bar.cycle_reps]
+        vals   = [polyhedral_path_func(self.point_cloud[loop.vertex_list]) for loop in bar.cycle_reps]
+        a, b   = bar.birth, bar.death
+
+        h, xs, ys = self.build_convolution_with_indicator(starts, ends, vals, a, b)
+
+        return h, xs, ys
+
+    def plot_generalized_interval_landscape(self,  polyhedral_path_func: Callable[[NDArray],float], bar: Optional[Bar]=None,
+                                            ax: Optional["matplotlib.axes.Axes"] =None, title: Optional[str] = None):
+
+        if bar is None:
+            bar = self.max_bar()
+
+        if bar not in self.barcode:
+            raise ValueError("Bar is not in barcode of loop forest")
+
+        starts = [loop.active_start for loop in bar.cycle_reps]
+        ends   = [loop.active_end   for loop in bar.cycle_reps]
+        vals   = [polyhedral_path_func(self.point_cloud[loop.vertex_list]) for loop in bar.cycle_reps]
+        a  = bar.birth # + bar.lifespan()/4
+        b =  bar.death # - bar.lifespan()/4
+
+        ax, (h, xs, ys) = self.plot_convolution(starts, ends, vals, a, b, title = title, ax = ax)
+
+        return ax, (h, xs, ys)
+
+    def plot_landscape_subplots(self, 
+                                polyhedral_path_funcs: List[Callable[[NDArray],float]],
+                                bar: Optional[Bar] = None,
+                                column_titles: Optional[List[str]] = None,
+                                xrange_dict: Optional[ dict[tuple[int,int], tuple[float,float]] ]= None,
+                                yrange_dict: Optional[ dict[tuple[int,int], tuple[float,float]] ] = None,
+                                ):
+        """
+        Plot point cloud, barcode measurement and generalized barcode of input bar and measurement function in polyhedral_path_functions
+        
+        If no bar is given, bar with max length is used.
+        xrange_dict and yrange_dict are optional paramters to fix axis size of indiviual subplots
+        column_title can be used to specifiy titles of columns for the measurement functions. If column_title=None then function names are used as column titles
+        """
+
+        if bar is None:
+            bar = self.max_bar()
+        
+        if bar not in self.barcode:
+            raise ValueError("Bar is not in barcode of loop forest")
+
+        figsize = (4*(len(polyhedral_path_funcs)+1),8)
+
+        fig, axes = plt.subplots(nrows = 2, ncols= len(polyhedral_path_funcs)+1, figsize=figsize)
+
+        axes[0,0].scatter(self.point_cloud[:,0], self.point_cloud[:,1], s=1)
+        axes[0,0].set_aspect('equal')
+
+        axes[1,0].axis("off")
+        axes[0,0].set_title("Point Cloud")
+
+
+        for i in range(0, len(polyhedral_path_funcs)):
+            self.plot_barcode_measurement(bar=bar,polyhedral_path_func=polyhedral_path_funcs[i], ax=axes[0,i+1])
+            self.plot_generalized_interval_landscape(bar = bar, polyhedral_path_func=polyhedral_path_funcs[i], ax = axes[1,i+1])
+            
+            axes[0,i+1].set_xlabel(None)
+            if column_titles is None:
+                axes[0,i+1].set_title(polyhedral_path_funcs[i].__name__)
+            else:
+                if not len(column_titles)==len(polyhedral_path_funcs):
+                    raise ValueError("Length of column titles does not match number of input functions")
+                axes[0,i+1].set_title(column_titles[i])
+            
+            if xrange_dict is not None:
+                if (0,i+1) in xrange_dict:
+                    axes[0,i+1].set_xlim(xrange_dict[(0,i+1)])
+                if (1,i+1) in xrange_dict:
+                    axes[1,i+1].set_xlim(xrange_dict[(1,i+1)])
+            
+            if yrange_dict is not None:
+                if (0,i+1) in yrange_dict:
+                    axes[0,i+1].set_ylim(yrange_dict[(0,i+1)])
+                if (1,i+1) in yrange_dict:
+                    axes[1,i+1].set_ylim(yrange_dict[(1,i+1)])
+        plt.tight_layout()
+        plt.show()
+
+        return axes
+
 #------------ helper functions which use classes ---------------
 
-
-# ---------- Compute Loop Forest -----------------
-def compute_loop_forest(point_cloud, reduce: bool = True, compute_barcode= True):
-    """ 
-    Computes LoopForest object for a point cloud.
-    reduce = True means that multiple changes at the same filtration value is collapsed to a single node.
-    compute_barcode = True computes barcodes and stores it in self.barcode as list of bar objects
-    """
-
-    overall_start = time.perf_counter()
-
-    loop_forest = LoopForest(point_cloud=point_cloud)
-
-    alpha_complex_time = time.perf_counter()-overall_start
-    print(f"Alpha complex generated in {alpha_complex_time}")
-
-    loop_forest_start = time.perf_counter()
-
-    edge_loop_dict = {}
-
-    #simplices is already ordered in ascending order by number of simplices 
-    for simplex, filt_val in reversed(loop_forest.filtration):
-
-        if len(simplex)<=1:
-            continue
-        
-        if len(simplex) == 3:
-            new_node = loop_forest.add_leaf( triangle=simplex, filt_val=filt_val)
-
-            faces = list(itertools.combinations(simplex, 2))
-            for edge in faces:
-                if key(edge) in edge_loop_dict:
-                    edge_loop_dict[key(edge)].append(new_node.id)
-                else:
-                    edge_loop_dict[key(edge)] = [new_node.id]
-
-        if len(simplex) == 2:
-            #L is loops containing nodes, can be of the form [],[l1], [l1,l2], [l1,l1]
-            #L is active nodes over L_tmp
-
-            #If key exists, get its value and remove it
-            #if key does not exists, get []
-            L_tmp_ids = edge_loop_dict.pop(key(simplex), [])
-
-            L = loop_forest._update_node_list(L_tmp_ids)
-
-
-            #if no loop contains edge, nothing happens
-            if len(L) == 0:
-                continue
-
-            #if edge is only contained in a single loop and appears only once in that loop once, remove that loop from the active loops 
-            elif len(L) == 1:
-                #update the loop dict for all edges which very contained in the loop we just removed
-                vertex_loop = L[0].loop.vertex_list
-                for i in range(len(vertex_loop)):
-
-                        edge = [vertex_loop[i-1], vertex_loop[i]]
-
-
-                        L_edge_tmp = edge_loop_dict.pop(key(edge), None)
-                        if L_edge_tmp is None:
-                            continue
-
-                        L_edge = loop_forest._update_node_list(L_edge_tmp)
-
-                        if len(L_edge)> 2:
-                            raise ValueError("L_edge too long in loop removal process")
-
-                        if len(L_edge)==1:
-                            continue
-                        elif L_edge[0] != L[0]:
-                            edge_loop_dict[key(edge)] = [L_edge[0].id]
-                        elif L_edge[1] != L[0]: 
-                            edge_loop_dict[key(edge)] = [L_edge[1].id]
-                        else:
-                            continue
-                            
-                loop_forest.make_root(node=L[0],filt_val=filt_val)
-
-                continue
-
-            elif len(L) == 2 and L[0]!=L[1]:
-                parent_loop = loop_forest.merge_loops(loop1=L[0].loop ,loop2= L[1].loop, edge=simplex) 
-                loop_forest.merge_nodes( node1=L[0], node2=L[1], parent_loop=parent_loop, filt_val=filt_val)
-                if not loop_in_filtration_check(parent_loop.vertex_list, simplex_tree=loop_forest.simplex_tree, filt_value=filt_val):
-                        print('edge', simplex)
-                        print('edge dict entry')
-                        print('filtration value', filt_val)
-                        print(f'first loop', L[0].loop)
-                        print(f'second loop', L[1].loop)
-                        raise ValueError("Loop not in simplex, Loop concat Case")
-
-
-            elif len(L) == 2 and L[0]==L[1]:
-                #Same edge is contained in a loop in both directions, we update the loop
-                vertex_loop, redundant_vertices = find_outer_loop(edge=simplex,
-                                              vertex_loop=L[0].loop.vertex_list, 
-                                              point_cloud=loop_forest.point_cloud)
-                if not loop_in_filtration_check(vertex_loop, simplex_tree=loop_forest.simplex_tree, filt_value=filt_val):
-                            print('edge', simplex)
-                            print(f'starting loop', L[0].loop)
-                            print(f'outer loop', vertex_loop)
-                            raise ValueError("Loop not in simplex, Tiebreak Case")
-                
-                #update dict entries for edges from the redundant loop
-                if len(redundant_vertices)>=2:
-                    for i in range(len(redundant_vertices)):
-                        edge = [redundant_vertices[i-1], redundant_vertices[i]]
-
-                        L_edge_tmp = edge_loop_dict.pop(key(edge), None)
-                        if L_edge_tmp is None:
-                            continue
-
-                        L_edge = loop_forest._update_node_list(L_edge_tmp)
-
-                        if len(L_edge)> 2:
-                            raise ValueError("L_edge too long in loop removal process")
-
-                        if len(L_edge)==1:
-                            continue
-                        elif L_edge[0] != L[0]:
-                            edge_loop_dict[key(edge)] = [L_edge[0].id]
-                        elif L_edge[1] != L[0]: 
-                            edge_loop_dict[key(edge)] = [L_edge[1].id]
-                        else:
-                            continue
-
-                updated_loop = loop_forest.generate_loop(vertex_loop)
-
-                loop_forest.update_node(node=L[0], updated_loop=updated_loop, filt_val=filt_val)
-
-            else:
-                raise ValueError("Error, L is of the wrong form")
-
-    loop_forest_time = time.perf_counter() - loop_forest_start
-
-    print(f"Forest succesfully computed in {loop_forest_time} sec")
-
-    #compute where each loop is active
-    loop_forest._compute_loop_activity()
-
-    if reduce:
-        loop_forest._reduce_forest()
-
-    if compute_barcode:
-        loop_forest.compute_barcode()
-        
-
-    return loop_forest
 
 
 
