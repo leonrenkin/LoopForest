@@ -1808,7 +1808,7 @@ class LoopForest:
         plt.tight_layout()
         plt.show()
 
-        return axes
+        return fig, axes
 
 #------------ helper functions which use classes ---------------
 
