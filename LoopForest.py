@@ -14,6 +14,7 @@ import seaborn as sns
 import bisect
 from bisect import bisect_right
 
+
 # ------- helper functions --------------
 
 def loop_in_filtration_check(loop, simplex_tree, filt_value):
@@ -278,21 +279,29 @@ class Bar:
     The cycle reps are a strictly decreasing chain w.r.t. inclusion.
     """
 
-    def __init__(self, birth: float, death: float, _node_progression: tuple[int,...], cycle_reps: list[Loop], is_max_tree_bar: Optional[bool]=None):
+    def __init__(self, birth: float, 
+                 death: float, 
+                 _node_progression: tuple[int,...], 
+                 cycle_reps: list[Loop], 
+                 is_max_tree_bar: Optional[bool]=None, 
+                 root_id: Optional[int]=None):
         self.birth = birth
         self.death = death
         self._node_progression = _node_progression #nodes saved as node_ids
         self.cycle_reps = cycle_reps
         self.is_max_tree_bar = is_max_tree_bar
+        self.root_id = root_id
 
-
-    def loop_at_filtration_value(self, filt_val):
+    def loop_at_filtration_value(self, filt_val)->Loop:
         """Binary search to find active loop at filtration value of this bar."""
 
         if filt_val < self.birth:
             raise ValueError(f"Filtration value {filt_val} is too small and not in lifespan of the bar")
         if filt_val >= self.death:
             raise ValueError(f"Filtration value {filt_val} is too large and not in lifespan of the bar")
+
+        if len(self._node_progression)==1:
+            return self.cycle_reps[0]
 
         first = 0
         last = len(self.cycle_reps)-1
@@ -917,6 +926,7 @@ class LoopForest:
             loop_progression = [node.loop]
             node._barcode_covered=True
             is_max_tree_bar = True
+            root_id = self.get_root(node).id
 
             if node.parent == None:
                 raise ValueError("Leaf has no Parent, this should not happen")
@@ -926,10 +936,10 @@ class LoopForest:
             #walk up forest until a root or an already _barcode_covered node is discovered
             while parent.parent is not None:
                 #check if parent node has already been covered by leaf with larger filtration value
-                if self.nodes[parent.parent]._barcode_covered == True:
+                if parent._barcode_covered == True:
                     is_max_tree_bar = False
                     break
-                    
+
                 node_id_progession.append(parent.id)
                 loop_progression.append(parent.loop)
                 parent._barcode_covered = True
@@ -937,14 +947,16 @@ class LoopForest:
                 #move to parent of parent
                 parent = self.nodes[parent.parent]
 
-            #loop in root node should be the same as in node below therefore we do not need to add it after last iteration
             birth = parent.filt_val
 
+
             #reverse lists to get progression which is ascending with respect to filtration value
-            bar = Bar(birth=birth,death=death, 
+            bar = Bar(birth=birth,
+                      death=death, 
                       _node_progression = tuple(reversed(node_id_progession)), 
                       cycle_reps=list(reversed(loop_progression)), 
-                      is_max_tree_bar=is_max_tree_bar)
+                      is_max_tree_bar=is_max_tree_bar,
+                      root_id=root_id)
             self.barcode.add(bar)
  
 
@@ -957,10 +969,177 @@ class LoopForest:
     def max_bar(self):
         return max(self.barcode, key=lambda bar: bar.lifespan())
     
+    def active_bars_at(self, filt_val:float):
+        return [bar for bar in self.barcode if (bar.birth<=filt_val and bar.death>filt_val)]
+
+    # ------ generate color scheme  ---------
+
+    def _build_color_map_forest(self, seed: Optional[int] = 39):
+        """
+        Computes a color map which assign a color to each bar in the barcode. 
+        Bars in same tree will have similiar colors. 
+        Saved as a dictionary {bar: "#RRGGBB"} in self.color_map_forest
+        Based on json
+        Seed for randomness
+        """
+
+        from color_scheme import color_map_for_bars
+
+        ordered_bars = sorted(list(self.barcode), key= lambda bar: bar.lifespan(), reverse=True)
+
+        self.color_map_forest = color_map_for_bars(
+            ordered_bars,
+            seed =seed,
+            by_id=False,
+        )
+
+        return
+
+    def _build_color_map_bars(self):
+        """
+        Computes a color map which assign a color to each bar in the barcode. 
+        Ignores tree structure and cycles through 20 colors from longest to shortest bar 
+        Saved as a dictionary {bar: "#RRGGBB"} in self.color_map_bars
+        """
+        bars_sorted = sorted(list(self.barcode), key = lambda bar:bar.lifespan(), reverse=True )
+        colors = sns.color_palette("tab20", len(bars_sorted))
+
+        self.color_map_bars = {bars_sorted[i]: colors[i] for i in range(len(bars_sorted))}
+        return
+
     # ----- plotting tools -------
 
     #ChatGPT plotting function
     def plot_at_filtration( 
+        self,
+        filt_val: float,
+        ax=None,
+        show: bool = True,
+        fill_triangles: bool = True,
+        loop_vertex_markers: bool = False,
+        figsize: tuple[float, float] = (7, 7), 
+        point_size: float = 3,
+        coloring: Literal['forest','bars'] = "forest",
+    ):
+        """
+        Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
+        and overlay the loops of the nodes active at filt_val.
+
+        Notes
+        -----
+        - GUDHI's AlphaComplex / SimplexTree work in α² units (squared radius).
+        Pass the same units here.
+        - Uses SimplexTree.get_filtration(), which is sorted by increasing filtration.
+
+        Parameters
+        ----------
+        filt_val : float
+            Filtration threshold (α² units).
+        ax : matplotlib.axes.Axes or None
+            Axes to draw on; if None, a new figure+axes are created.
+        show : bool
+            If True, calls plt.show() when done.
+        fill_triangles : bool
+            If True, lightly fill triangles present at this filtration.
+        loop_vertex_markers : bool
+            If True, mark the vertices used in each loop.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        
+        
+        if coloring == "forest":
+            #built color map if it has not already been done
+            if not hasattr(self,"color_map_forest"):
+                self._build_color_map_forest()
+            color_map = self.color_map_forest
+        elif coloring == "bars":
+            if not hasattr(self,"color_map_bars"):
+                self._build_color_map_bars()
+            color_map = self.color_map_bars
+
+        # --- Prep
+        pts = np.asarray(self.point_cloud, dtype=float)
+        if pts.ndim != 2 or pts.shape[1] != 2:
+            raise ValueError("point_cloud must be an (n_points, 2) array-like.")
+
+        if ax is None:
+            _, ax = plt.subplots(figsize=figsize)
+
+        # --- Collect edges and triangles present at this filtration value
+        edges_xy = []      # list of [[x1,y1],[x2,y2]]
+        tris_xy = []       # list of [[x1,y1],[x2,y2],[x3,y3]]
+        for simplex, f in self.filtration:
+            if f > filt_val:
+                # Filtration is sorted non-decreasing → safe to stop here
+                break
+            if len(simplex) == 2:  # edge
+                i, j = simplex
+                edges_xy.append([pts[i], pts[j]])
+            elif len(simplex) == 3:  # triangle
+                i, j, k = simplex
+                tris_xy.append([pts[i], pts[j], pts[k]])
+
+        # --- Base scatter
+        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+
+        # --- Draw triangles first (under edges)
+        if fill_triangles and tris_xy:
+            tri_coll = PolyCollection(
+                tris_xy, closed=True, edgecolors="none", facecolors="C0", alpha=0.15, zorder=1
+            )
+            ax.add_collection(tri_coll)
+
+        # --- Draw edges
+        if edges_xy:
+            edge_coll = LineCollection(edges_xy, linewidths=0.8, colors="0.65", zorder=2, label="edges")
+            ax.add_collection(edge_coll)
+
+        
+
+        # --- Overlay loops from active nodes at filt_val
+        for bar in self.barcode:
+            if filt_val>=bar.birth and filt_val<bar.death:
+
+                loop = bar.loop_at_filtration_value(filt_val=filt_val)
+                vs = loop.vertex_list # type: ignore
+                if len(vs) < 2:
+                    continue
+
+                loop_xy = pts[vs]  # shape: (m, 2)
+
+                # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
+                segments = [np.array([loop_xy[i-1], loop_xy[i]]) for i in range(len(loop_xy))]
+
+                # Thicker colored edges along the loop
+                loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
+                ax.add_collection(loop_coll)
+
+                # Optional vertex markers for the loop
+                if loop_vertex_markers:
+                    ax.scatter(
+                        pts[vs, 0], pts[vs, 1],
+                        s=36, color="orange", edgecolors="white", linewidths=0.8, zorder=6
+                    )
+
+        # --- Aesthetics
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_title(f"α² ≤ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        # A simple legend (points + edges); loop colors are self-explanatory on top
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(loc="lower right", frameon=True)
+
+        ax.autoscale()  # fit collections
+        if show:
+            plt.show()
+        return ax
+
+    def plot_at_filtration_old( 
         self,
         filt_val: float,
         ax=None,
@@ -1274,7 +1453,7 @@ class LoopForest:
         if show:
             plt.show()
         return ax
-    
+
     #ChatGPT plotting function
     def plot_barcode(
         self,
