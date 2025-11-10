@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Literal, Iterable, Callable
+from typing import Dict, List, Optional, Tuple, Literal, Iterable, Callable, Union, Sequence
 from numpy.typing import NDArray
 import itertools
 import numpy as np
@@ -327,8 +327,386 @@ class Bar:
         """Returns lifespan of bar"""
         return self.death - self.birth
 
+@dataclass
+class StepFunctionData:
+    """
+    Representation of a piecewise-constant function:
+
+    f(t) = vals[i]  on [starts[i], ends[i]]
+         = baseline elsewhere.
+
+    All arrays are 1D and aligned by index. `domain` is the global range
+    where the function is potentially non-zero (for convenience).
+    """
+    starts: NDArray[np.float64]
+    ends: NDArray[np.float64]
+    vals: NDArray[np.float64]
+    baseline: float
+    domain: Tuple[float, float]
+    metadata: Dict[str, object] = field(default_factory=dict)
+
+@dataclass
+class PiecewiseLinearFunction:
+    """
+    Piecewise-linear function specified by breakpoints (xs, ys).
+    Between xs[i] and xs[i+1] the function is linear. Outside [xs[0], xs[-1]]
+    the function evaluates to 0.0 by default.
+    """
+    xs: NDArray[np.float64]
+    ys: NDArray[np.float64]
+    domain: Tuple[float, float]
+    metadata: Dict[str, object] = field(default_factory=dict)
+
+    def __call__(self, x: Union[NDArray[np.float64], float]) -> Union[NDArray[np.float64], float]:
+        if self.xs.size == 0:
+            if np.isscalar(x):
+                return 0.0
+            x_arr = np.asarray(x, dtype=float)
+            return np.zeros_like(x_arr)
+
+        x_arr = np.asarray(x, dtype=float)
+        y_arr = np.interp(x_arr, self.xs, self.ys, left=0.0, right=0.0)
+
+        if np.isscalar(x):
+            # np.interp returns a scalar np.ndarray for scalar input
+            return float(y_arr)
+        return y_arr
+
+@dataclass
+class GeneralizedLandscapeFamily:
+    """
+    Container for a whole family of generalized landscapes for a given LoopForest
+    and a fixed polyhedral path function.
+
+    - bar_kernels: per-bar kernels (typically already rescaled if mode="pyramid")
+    - landscapes: k -> λ_k (k-th landscape) as PiecewiseLinearFunction
+    """
+    loop_forest_id: str
+    poly_func_name: str
+    rescaling: str  # e.g. "raw" or "pyramid"
+    x_grid: NDArray[np.float64]
+    bar_kernels: Dict[int, PiecewiseLinearFunction]
+    landscapes: Dict[int, PiecewiseLinearFunction]
+    extra_meta: Dict[str, object] = field(default_factory=dict)
+    # Optional back-reference for interactive use; safe to ignore for serialization
+    loop_forest: Optional["LoopForest"] = None
+
+@dataclass
+class LandscapeVectorizer:
+    """
+    Turn generalized landscapes of LoopForest objects into fixed-size
+    feature vectors suitable for machine learning.
+
+    Usage:
+
+        vec = LandscapeVectorizer(
+            polyhedral_path_func=path_func,
+            max_k=3,
+            num_grid_points=256,
+            mode="pyramid",
+            min_bar_length=0.05,
+        )
+        vec.fit(training_forests)
+        X_train = vec.transform(training_forests)
+        X_test  = vec.transform(test_forests)
+
+    After that, X_train and X_test are standard numpy arrays and can be
+    used with scikit-learn, PyTorch, etc.
+    """
+    polyhedral_path_func: Callable[[NDArray[np.float64]], float]
+    max_k: int = 3
+    num_grid_points: int = 256
+    mode: Literal["raw", "pyramid"] = "pyramid"
+    min_bar_length: float = 0.0
+    t_min: Optional[float] = None
+    t_max: Optional[float] = None
+
+    # fitted attributes
+    x_grid_: Optional[NDArray[np.float64]] = field(init=False, default=None)
+    is_fitted_: bool = field(init=False, default=False)
+
+    def fit(self, forests: Sequence["LoopForest"]) -> "LandscapeVectorizer":
+        """
+        Decide on a common time grid for all forests.
+
+        If t_min / t_max are given, they are used directly; otherwise, they
+        are inferred from the barcodes (respecting min_bar_length).
+        """
+        if len(forests) == 0:
+            raise ValueError("fit() received an empty list of forests")
+
+        # 1. Determine global t_min / t_max from barcodes if not fixed
+        if self.t_min is None or self.t_max is None:
+            births: List[float] = []
+            deaths: List[float] = []
+            for lf in forests:
+                if not hasattr(lf, "barcode"):
+                    raise AttributeError("One of the LoopForest objects has no 'barcode'")
+                for bar in lf.barcode:
+                    length = bar.death - bar.birth
+                    if length >= self.min_bar_length:
+                        births.append(bar.birth)
+                        deaths.append(bar.death)
+            if not births or not deaths:
+                raise ValueError(
+                    "No bars of sufficient length found in any forest while fitting "
+                    f"(min_bar_length={self.min_bar_length})."
+                )
+            t_min = min(births) if self.t_min is None else self.t_min
+            t_max = max(deaths) if self.t_max is None else self.t_max
+        else:
+            t_min, t_max = self.t_min, self.t_max
+
+        if t_max <= t_min:
+            raise ValueError(f"t_max must be > t_min, got [{t_min}, {t_max}]")
+
+        # 2. Build fixed grid and store it
+        self.x_grid_ = np.linspace(t_min, t_max, self.num_grid_points)
+        self.is_fitted_ = True
+        return self
+
+    def _vectorise_single(self, lf: "LoopForest") -> NDArray[np.float64]:
+        """
+        Compute the feature vector for a single LoopForest on the fixed grid.
+        """
+        assert self.x_grid_ is not None
+
+        family = lf.compute_generalized_landscape_family(
+            self.polyhedral_path_func,
+            max_k=self.max_k,
+            num_grid_points=self.num_grid_points,
+            mode=self.mode,
+            min_bar_length=self.min_bar_length,
+            x_grid=self.x_grid_,  # enforce consistent grid
+        )
+
+        # Flatten [k, x] into one vector in a fixed, documented order:
+        # [λ_1(x_1..x_N), λ_2(x_1..x_N), ..., λ_max_k(x_1..x_N)].
+        pieces: List[NDArray[np.float64]] = []
+        for k in range(1, self.max_k + 1):
+            if k in family.landscapes:
+                ys = family.landscapes[k].ys
+            else:
+                # If this forest has fewer bars than k, define λ_k ≡ 0
+                ys = np.zeros_like(self.x_grid_)
+            pieces.append(ys)
+
+        vec = np.concatenate(pieces, axis=0)  # shape: (max_k * num_grid_points,)
+        return vec
+
+    def transform(self, forests: Sequence["LoopForest"]) -> NDArray[np.float64]:
+        """
+        Transform a sequence of LoopForest objects into a design matrix X.
+
+        X has shape (n_forests, max_k * num_grid_points).
+        """
+        if not self.is_fitted_ or self.x_grid_ is None:
+            raise RuntimeError("LandscapeVectorizer must be fitted before calling transform().")
+
+        n = len(forests)
+        if n == 0:
+            raise ValueError("transform() received an empty list of forests")
+
+        X = np.zeros((n, self.max_k * self.num_grid_points), dtype=float)
+        for i, lf in enumerate(forests):
+            X[i, :] = self._vectorise_single(lf)
+
+        return X
+
+    def fit_transform(self, forests: Sequence["LoopForest"]) -> NDArray[np.float64]:
+        """
+        Convenience method: fit the grid from forests and return X in one call.
+        """
+        self.fit(forests)
+        return self.transform(forests)
+
+@dataclass
+class MultiLandscapeVectorizer:
+    """
+    Vectorise generalized landscapes for multiple path functions into a single
+    feature vector suitable for machine learning.
+
+    For each forest and each path function f_j, we:
+      - compute landscapes λ_1,...,λ_max_k on a shared x_grid,
+      - flatten the sampled values,
+      - optionally append L1 and L2 norms of each λ_k.
+
+    Resulting feature vector (conceptually):
+
+        [ samples for f_1 | stats for f_1 | samples for f_2 | stats for f_2 | ... ]
+
+    Usage:
+        vec = MultiLandscapeVectorizer(
+            poly_funcs=[f_const_one, f_length, ...],
+            max_k=3,
+            num_grid_points=256,
+            mode="pyramid",
+            min_bar_length=0.05,
+            include_stats=True,
+        )
+
+        vec.fit(train_forests)
+        X_train = vec.transform(train_forests)
+        X_test  = vec.transform(test_forests)
+    """
+    poly_funcs: Sequence[Callable[[NDArray[np.float64]], float]]
+    max_k: int = 5
+    num_grid_points: int = 256
+    mode: Literal["raw", "pyramid"] = "pyramid"
+    min_bar_length: float = 0.0
+    t_min: Optional[float] = None
+    t_max: Optional[float] = None
+    include_stats: bool = False
+
+    # derived
+    func_names: Optional[Sequence[str]] = None
+
+    # fitted attributes
+    x_grid_: Optional[NDArray[np.float64]] = field(init=False, default=None)
+    dx_: Optional[float] = field(init=False, default=None)
+    is_fitted_: bool = field(init=False, default=False)
+    n_features_: Optional[int] = field(init=False, default=None)
+
+    def __post_init__(self):
+        if self.func_names is None:
+            self.func_names = [
+                getattr(f, "__name__", f"func_{i}")
+                for i, f in enumerate(self.poly_funcs)
+            ]
+
+    def fit(self, forests: Sequence["LoopForest"]) -> "MultiLandscapeVectorizer":
+        """
+        Decide on a common time grid for all forests.
+
+        If t_min / t_max are given, they are used directly; otherwise, they
+        are inferred from the barcodes (respecting min_bar_length).
+        """
+        if len(forests) == 0:
+            raise ValueError("fit() received an empty list of forests")
+
+        # 1. Determine global t_min / t_max from barcodes if not fixed
+        if self.t_min is None or self.t_max is None:
+            births: List[float] = []
+            deaths: List[float] = []
+            for lf in forests:
+                if not hasattr(lf, "barcode"):
+                    raise AttributeError("One of the LoopForest objects has no 'barcode'")
+                for bar in lf.barcode:
+                    length = bar.death - bar.birth
+                    if length >= self.min_bar_length:
+                        births.append(bar.birth)
+                        deaths.append(bar.death)
+            if not births or not deaths:
+                raise ValueError(
+                    "No bars of sufficient length found in any forest while fitting "
+                    f"(min_bar_length={self.min_bar_length})."
+                )
+            t_min = min(births) if self.t_min is None else self.t_min
+            t_max = max(deaths) if self.t_max is None else self.t_max
+        else:
+            t_min, t_max = self.t_min, self.t_max
+
+        if t_max <= t_min:
+            raise ValueError(f"t_max must be > t_min, got [{t_min}, {t_max}]")
+
+        # 2. Build fixed grid and store it
+        self.x_grid_ = np.linspace(t_min, t_max, self.num_grid_points)
+        self.dx_ = float(self.x_grid_[1] - self.x_grid_[0])
+        self.is_fitted_ = True
+
+        # 3. Precompute feature dimension
+        n_funcs = len(self.poly_funcs)
+        n_samples_per_func = self.max_k * self.num_grid_points
+        n_stats_per_func = 0
+        if self.include_stats:
+            # L1 and L2 per level => 2 * max_k
+            n_stats_per_func = 2 * self.max_k
+        self.n_features_ = n_funcs * (n_samples_per_func + n_stats_per_func)
+
+        return self
+
+    def _vectorise_single_for_func(
+        self,
+        lf: "LoopForest",
+        f: Callable[[NDArray[np.float64]], float],
+    ) -> NDArray[np.float64]:
+        """
+        Compute the feature block for one forest and one path function f.
+        Block = [samples, (optional) stats].
+        """
+        assert self.x_grid_ is not None and self.dx_ is not None
+
+        family = lf.compute_generalized_landscape_family(
+            polyhedral_path_func=f,
+            max_k=self.max_k,
+            num_grid_points=self.num_grid_points,
+            mode=self.mode,
+            min_bar_length=self.min_bar_length,
+            x_grid=self.x_grid_,  # enforce consistent grid
+            cache=False, # Do not save family to forest
+        )
+
+        # Sample part: [λ_1(x_1..x_N), ..., λ_max_k(x_1..x_N)]
+        pieces: List[NDArray[np.float64]] = []
+        stats: List[float] = []
+
+        for k in range(1, self.max_k + 1):
+            if k in family.landscapes:
+                ys = family.landscapes[k].ys
+            else:
+                ys = np.zeros_like(self.x_grid_)
+            pieces.append(ys)
+
+            if self.include_stats:
+                # L1 norm ~ ∫ |λ_k| dx
+                l1 = float(np.sum(np.abs(ys)) * self.dx_)
+                # L2 norm ~ (∫ λ_k^2 dx)^(1/2)
+                l2 = float(np.sqrt(np.sum(ys ** 2) * self.dx_))
+                stats.extend([l1, l2])
+
+        samples_flat = np.concatenate(pieces, axis=0)  # size = max_k * num_grid_points
+        if self.include_stats:
+            stats_arr = np.asarray(stats, dtype=float)  # size = 2 * max_k
+            return np.concatenate([samples_flat, stats_arr], axis=0)
+        else:
+            return samples_flat
+
+    def transform(self, forests: Sequence["LoopForest"]) -> NDArray[np.float64]:
+        """
+        Transform a sequence of LoopForest objects into a design matrix X.
+
+        X has shape (n_forests, n_features_).
+        """
+        if not self.is_fitted_ or self.x_grid_ is None:
+            raise RuntimeError("MultiLandscapeVectorizer must be fitted before calling transform().")
+
+        n = len(forests)
+        if n == 0:
+            raise ValueError("transform() received an empty list of forests")
+
+        if self.n_features_ is None:
+            raise RuntimeError("n_features_ not initialised. Call fit() first.")
+
+        X = np.zeros((n, self.n_features_), dtype=float)
+
+        for i, lf in enumerate(forests):
+            blocks: List[NDArray[np.float64]] = []
+            for f in self.poly_funcs:
+                block = self._vectorise_single_for_func(lf, f)
+                blocks.append(block)
+            X[i, :] = np.concatenate(blocks, axis=0)
+
+        return X
+
+    def fit_transform(self, forests: Sequence["LoopForest"]) -> NDArray[np.float64]:
+        """
+        Convenience method: fit the grid from forests and return X in one call.
+        """
+        self.fit(forests)
+        return self.transform(forests)
+
 class LoopForest:
-    """Object that stores progression of optimal loops for alpha complex of a point cloud in a forest format"""
+    """Object that computes and stores progression of optimal loops for alpha complex of a point cloud in a forest format."""
 
     def __init__(self, 
                  point_cloud,
@@ -1009,7 +1387,6 @@ class LoopForest:
 
     # ----- plotting tools -------
 
-    #ChatGPT plotting function
     def plot_at_filtration( 
         self,
         filt_val: float,
@@ -1027,14 +1404,14 @@ class LoopForest:
 
         Notes
         -----
-        - GUDHI's AlphaComplex / SimplexTree work in α² units (squared radius).
+        - GUDHI's AlphaComplex / SimplexTree work
         Pass the same units here.
         - Uses SimplexTree.get_filtration(), which is sorted by increasing filtration.
 
         Parameters
         ----------
         filt_val : float
-            Filtration threshold (α² units).
+            Filtration threshold.
         ax : matplotlib.axes.Axes or None
             Axes to draw on; if None, a new figure+axes are created.
         show : bool
@@ -1126,13 +1503,13 @@ class LoopForest:
 
         # --- Aesthetics
         ax.set_aspect("equal", adjustable="box")
-        ax.set_title(f"α² ≤ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
+        ax.set_title(f"α ≤ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
+        #ax.set_xlabel("x")
+        #ax.set_ylabel("y")
         # A simple legend (points + edges); loop colors are self-explanatory on top
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(loc="lower right", frameon=True)
+        #handles, labels = ax.get_legend_handles_labels()
+        #if handles:
+        #    ax.legend(loc="lower right", frameon=True)
 
         ax.autoscale()  # fit collections
         if show:
@@ -1455,7 +1832,7 @@ class LoopForest:
         return ax
 
     #ChatGPT plotting function
-    def plot_barcode(
+    def _plot_barcode(
         self,
         *,
         ax=None,
@@ -1630,12 +2007,189 @@ class LoopForest:
 
         return fig, ax
 
+    # --------- animation -------------
 
-    #------- function graph plotting tools for generalized landscape ----------------
+    def animate_filtration(
+        self,
+        filename: Optional[str] = None,
+        *,
+        fps: int = 20,
+        frames: int = 200,
+        with_barcode: bool = False,
+        t_min: Optional[float] = None,
+        t_max: Optional[float] = None,
+        dpi: int = 200,
+        cloud_figsize: tuple[float, float] = (6.0, 6.0),
+        total_figsize: Optional[tuple[float, float]] = None,
+        plot_kwargs: Optional[dict] = None,
+    ):
+        """
+        Create an animation of the loop forest over the filtration.
+
+        Parameters
+        ----------
+        filename : str | None, optional
+            If given, the animation is written to this path. The extension
+            determines the writer (".mp4" uses FFMpegWriter, ".gif" uses
+            PillowWriter when available). If None, the animation object is
+            just returned.
+        fps : int, optional
+            Frames per second for the saved animation.
+        max_frames : int, optional
+            Soft upper bound on the number of frames. If the filtration has
+            more distinct values than this, a subsampled set of filtration
+            values is used.
+        with_barcode : bool, optional
+            If True, draw a second panel with the barcode and a vertical line
+            indicating the current filtration value.
+        t_min, t_max : float | None, optional
+            Optional lower/upper bounds on the filtration values to animate.
+        dpi : int, optional
+            DPI for saving the animation.
+        cloud_figsize : (float, float), optional
+            Size of the point-cloud panel when with_barcode=False.
+        total_figsize : (float, float) | None, optional
+            Total figure size when with_barcode=True. If None, a reasonable
+            default (10, 5) is used.
+        plot_kwargs : dict | None, optional
+            Extra keyword arguments forwarded to ``plot_at_filtration``.
+            For example::
+                plot_kwargs=dict(fill_triangles=True,
+                                 loop_vertex_markers=False,
+                                 point_size=3,
+                                 coloring="forest")
+
+        Returns
+        -------
+        anim : matplotlib.animation.FuncAnimation
+            The created animation. If ``filename`` is not None, the animation
+            is also saved to disk.
+        fig : matplotlib.figure.Figure
+            The figure on which the animation is drawn.
+        """
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.animation import FuncAnimation, FFMpegWriter
+
+        if not hasattr(self, "filtration") or not self.filtration:
+            raise ValueError("LoopForest has no filtration data to animate.")
+
+        
+        # Optional restriction to a time window
+        if t_min is None:
+            t_min = 0
+        if t_max is None:
+            t_max = max( node.filt_val for node in self.nodes.values() )
+
+        frame_times = np.linspace(t_min, t_max, frames).tolist()
+
+        # 3) Set up figure and axes
+        if with_barcode:
+            if total_figsize is None:
+                total_figsize = (10.0, 5.0)
+            fig, (ax_cloud, ax_bar) = plt.subplots(
+                1, 2, figsize=total_figsize,
+                gridspec_kw={"width_ratios": [3, 2]}
+            )
+            # Draw the (static) barcode once
+            if not getattr(self, "barcode", None):
+                raise ValueError("`with_barcode=True` but `self.barcode` is empty.")
+            self._plot_barcode(
+                ax=ax_bar,
+                sort="length",
+                title="Barcode",
+                xlabel="filtration value",
+            )
+
+            # Vertical line that will move with the filtration
+            current_t0 = frame_times[0]
+            barcode_line = ax_bar.axvline(current_t0, color="k", linewidth=2)
+        else:
+            fig, ax_cloud = plt.subplots(figsize=cloud_figsize)
+            ax_bar = None
+            barcode_line = None
+
+        if plot_kwargs is None:
+            plot_kwargs = {}
+        # Reasonable defaults (only used if not explicitly overridden)
+        plot_kwargs = {
+            "fill_triangles": True,
+            "loop_vertex_markers": False,
+            "point_size": 3,
+            "coloring": "forest",
+            "show": False,   # important: we manage the figure ourselves
+            **plot_kwargs,
+        }
+
+
+        def _draw_frame_at_time(t: float):
+            """Helper: clear the cloud axis and redraw for filtration value t."""
+            ax_cloud.clear()
+            # Delegate the heavy lifting to the existing helper
+            self.plot_at_filtration(filt_val=t, ax=ax_cloud, **plot_kwargs)
+
+            # Optional: overlay a small text box with the current filtration value.
+            # Comment this out if you prefer only the built-in title.
+            ax_cloud.text(
+                0.02, 0.98, rf"$\alpha = {t:.3g}$",
+                transform=ax_cloud.transAxes,
+                va="top", ha="left",
+                fontsize=11,
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7),
+            )
+
+        # 4) Animation callbacks
+        def init():
+            _draw_frame_at_time(frame_times[0])
+            if with_barcode and barcode_line is not None:
+                t0 = frame_times[0]
+                barcode_line.set_xdata([t0, t0])
+            return []
+
+        def update(frame_idx: int):
+            t = frame_times[frame_idx]
+            _draw_frame_at_time(t)
+            if with_barcode and barcode_line is not None:
+                barcode_line.set_xdata([t, t])
+            return []
+
+        anim = FuncAnimation(
+            fig,
+            update,
+            frames=len(frame_times),
+            init_func=init,
+            blit=False,
+        )
+
+        # 5) Optionally write to disk
+        if filename is not None:
+            fname = str(filename)
+            ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+            if ext == "mp4":
+                writer = FFMpegWriter(fps=fps, bitrate=2000)
+                anim.save(fname, writer=writer, dpi=dpi)
+            elif ext in {"gif", "gifv"}:
+                try:
+                    from matplotlib.animation import PillowWriter
+                except ImportError as e:  # optional dependency
+                    raise RuntimeError(
+                        "Saving as GIF requires Pillow. Install it with `pip install pillow`."
+                    ) from e
+                writer = PillowWriter(fps=fps)
+                anim.save(fname, writer=writer, dpi=dpi)
+            else:
+                # Fallback to default writer chosen by matplotlib
+                anim.save(fname, dpi=dpi, fps=fps)
+
+        return anim, fig
+
+    #------- generalized landscape ----------------
 
     Interval = Tuple[float, float]
     Item = Tuple[Interval, Loop]
 
+
+    #v1
     def _build_piecewise_function(
         self,
         bar: Bar,
@@ -1669,84 +2223,59 @@ class LoopForest:
 
         return f
 
-    def plot_barcode_measurement(
-            self,
-            polyhedral_path_func: Callable[[NDArray], float],
-            bar: Optional[Bar] = None,
-            x_range: Optional[Tuple[float, float]] = None,
-            y_range: Optional[Tuple[float, float]] = None,
-            *,
-            baseline: float = 0.0,
-            ax = None,
-            linewidth: float = 2.0,
-            label: Optional[str] = None,
-        ):
+    #v2
+    def _build_step_function_data(
+        self,
+        bar: "Bar",
+        polyhedral_path_func: Callable[[NDArray[np.float64]], float],
+        baseline: float = 0.0,
+    ) -> StepFunctionData:
         """
-        Plot the step graph of the piecewise-constant function defined by `items`.
-        - `x_range=(xmin, xmax)` restricts the plot; if None, it's inferred from the data.
-        - Regions not covered by any interval are drawn at `baseline` (default 0).
-        If no bar is given, bar with max length is used.
-        """
-        if bar is None:
-            bar = self.max_bar()
+        Build the piecewise-constant function associated to a single bar:
 
+        For each cycle representative 'loop' in bar.cycle_reps, we create an interval
+        [loop.active_start, loop.active_end] on which the function takes value
+        polyhedral_path_func(point_cloud[loop.vertex_list]).
+
+        Returns a StepFunctionData object.
+        """
         if bar not in self.barcode:
             raise ValueError("Bar is not in barcode of loop forest")
 
-        # Build the evaluator
-        f = self._build_piecewise_function(bar, polyhedral_path_func, baseline)
+        starts = np.array(
+            [loop.active_start for loop in bar.cycle_reps],
+            dtype=float,
+        )
+        ends = np.array(
+            [loop.active_end for loop in bar.cycle_reps],
+            dtype=float,
+        )
+        vals = np.array(
+            [polyhedral_path_func(self.point_cloud[loop.vertex_list]) for loop in bar.cycle_reps],
+            dtype=float,
+        )
 
-        if x_range is not None:
-            xmin, xmax = map(float, x_range)
-            if xmax <= xmin:
-                raise ValueError("x_range must be (xmin, xmax) with xmax > xmin.")
+        if starts.size == 0:
+            # Degenerate: no representatives
+            domain = (float(bar.birth), float(bar.death))
         else:
-            start= bar.cycle_reps[0].active_start
-            end = bar.cycle_reps[-1].active_end
-            xmin = start - 0.05 * (end - start)
-            xmax = end + 0.05 * (end - start)
+            domain = (float(starts.min()), float(ends.max()))
 
-        # compute break points of piecewise constant function
-        breaks = {xmin, xmax} #Using breaks as set and then sorting is inefficient since bar is already sorted but I currently dont care
-        for loop in bar.cycle_reps:
-            # Only keep endpoints that intersect the chosen window
-            if loop.active_end >= xmin and loop.active_start <= xmax:
-                breaks.add(max(loop.active_start, xmin))
-                breaks.add(min(loop.active_end, xmax))
-
-        xs = sorted(breaks)
-        if len(xs) < 2:
-            # Degenerate range; still produce an empty baseline line
-            xs = [xmin, xmax]
-
-        # Compute y on each half-open slice [x_k, x_{k+1})
-        ys = []
-        for i in range(len(xs) - 1):
-            mid = (xs[i] + xs[i + 1]) * 0.5
-            ys.append(f(mid))
-        # Append last y to match step-api length
-        ys.append(ys[-1] if ys else baseline)
-
-        # Plot
-        if ax is None:
-            fig, ax = plt.subplots()
-        else:
-            fig = ax.figure
-
-        ax.step(xs, ys, where="post", linewidth=linewidth, label=label or "piecewise")
-        ax.set_xlim(xmin, xmax)
-        if y_range is not None:
-            ax.set_ylim(y_range[0],y_range[1])
-        #ax.axhline(baseline, linestyle="--", linewidth=1)
-        ax.set_xlabel("radius")
-        ax.set_ylabel("value")
-        if label:
-            ax.legend()
-        ax.grid(True, alpha=0.3)
-        return ax
-
-    #ChatGPT function
-    def build_convolution_with_indicator(
+        return StepFunctionData(
+            starts=starts,
+            ends=ends,
+            vals=vals,
+            baseline=baseline,
+            domain=domain,
+            metadata={
+                "bar_birth": bar.birth,
+                "bar_death": bar.death,
+                "root_id": getattr(bar, "root_id", None),
+            },
+        )
+    
+    #ChatGPT function, v1
+    def _build_convolution_with_indicator(
             self,
             starts: List[float],
             ends: List[float],
@@ -1849,7 +2378,370 @@ class LoopForest:
 
         return h, xs, ys
 
-    #ChatGPT function
+    #ChatGPT function, v2
+    def compute_convolution_kernel_for_bar(
+        self,
+        bar: "Bar",
+        polyhedral_path_func: Callable[[NDArray[np.float64]], float],
+        *,
+        tol: float = 1e-12,
+    ) -> PiecewiseLinearFunction:
+        """
+        Use the existing build_convolution_with_indicator to compute
+
+            g(x) = (f * 1_[birth, death])(x)
+
+        where f is the piecewise-constant function from build_step_function_data.
+        Returns g as a PiecewiseLinearFunction.
+        """
+        sf = self._build_step_function_data(bar, polyhedral_path_func, baseline=0.0)
+
+        a, b = bar.birth, bar.death
+        h, xs, ys = self._build_convolution_with_indicator(
+            sf.starts.tolist(),
+            sf.ends.tolist(),
+            sf.vals.tolist(),
+            a,
+            b,
+            tol=tol,
+        )
+
+        xs_arr = np.asarray(xs, dtype=float)
+        ys_arr = np.asarray(ys, dtype=float)
+
+        if xs_arr.size > 1:
+            domain = (float(xs_arr[0]), float(xs_arr[-1]))
+        else:
+            domain = (float(a), float(b))
+
+        return PiecewiseLinearFunction(
+            xs=xs_arr,
+            ys=ys_arr,
+            domain=domain,
+            metadata={
+                **sf.metadata,
+                "poly_func_name": getattr(polyhedral_path_func, "__name__", "anonymous"),
+                "kernel_type": "raw_convolution",
+            },
+        )
+
+    #ChatGPT function, v2
+    def compute_generalized_interval_landscape(
+        self,
+        polyhedral_path_func: Callable[[NDArray[np.float64]], float],
+        bar: Optional["Bar"] = None,
+    ):
+        """
+        Backwards-compatible helper that computes the (raw) convolution kernel g
+        for a single bar and returns (h, xs, ys) as before, but implemented via
+        the new PiecewiseLinearFunction.
+
+        Note: this uses the *raw* convolution (no pyramid rescaling).
+        For landscapes, prefer compute_generalized_landscape_family.
+        """
+        if bar is None:
+            bar = self.max_bar()
+
+        if bar not in self.barcode:
+            raise ValueError("Bar is not in barcode of loop forest")
+
+        kernel = self.compute_convolution_kernel_for_bar(
+            bar,
+            polyhedral_path_func,
+        )
+
+        xs = kernel.xs.tolist()
+        ys = kernel.ys.tolist()
+
+        def h(x: float) -> float:
+            return float(kernel(x))
+
+        return h, xs, ys
+
+    #ChatGPT function, v2
+    def compute_landscape_kernel_for_bar(
+        self,
+        bar: "Bar",
+        polyhedral_path_func: Callable[[NDArray[np.float64]], float],
+        *,
+        mode: Literal["raw", "pyramid"] = "pyramid",
+        tol: float = 1e-12,
+    ) -> PiecewiseLinearFunction:
+        """
+        Build the kernel used for landscapes for a single bar.
+
+        - mode="raw":      return g(x) = (f * 1_[birth,death])(x)
+        - mode="pyramid":  return λ(x) = 1/2 * g(2x)
+
+        The "pyramid" mode should reproduce the usual persistence landscape
+        shape when f ≡ 1.
+        """
+        raw_kernel = self.compute_convolution_kernel_for_bar(
+            bar,
+            polyhedral_path_func,
+            tol=tol,
+        )
+
+        if mode == "raw":
+            # Just return a shallow copy with explicit metadata
+            return PiecewiseLinearFunction(
+                xs=raw_kernel.xs.copy(),
+                ys=raw_kernel.ys.copy(),
+                domain=raw_kernel.domain,
+                metadata={
+                    **raw_kernel.metadata,
+                    "kernel_type": "raw_convolution",
+                },
+            )
+
+        # mode == "pyramid"
+        xs = raw_kernel.xs
+        ys = raw_kernel.ys
+
+        # λ(x) = 1/2 * g(2x)
+        xs_scaled = xs / 2.0
+        ys_scaled = ys / 2.0
+
+        domain = (float(xs_scaled[0]), float(xs_scaled[-1])) if xs_scaled.size > 1 else raw_kernel.domain
+
+        return PiecewiseLinearFunction(
+            xs=xs_scaled,
+            ys=ys_scaled,
+            domain=domain,
+            metadata={
+                **raw_kernel.metadata,
+                "kernel_type": "pyramid_rescaled",
+                "rescaling_formula": "lambda(x) = 0.5 * g(2x)",
+            },
+        )
+
+    #ChatGPT function, v2
+    def compute_generalized_landscape_family(
+        self,
+        polyhedral_path_func: Callable[[NDArray[np.float64]], float],
+        *,
+        max_k: int = 5,
+        num_grid_points: int = 512,
+        mode: Literal["raw", "pyramid"] = "pyramid",
+        label: Optional[str] = None,
+        min_bar_length: float = 0.0,
+        x_grid: Optional[NDArray[np.float64]] = None,
+        cache: bool = True,
+    ) -> GeneralizedLandscapeFamily:
+        """
+        Compute the generalized landscape family for this LoopForest for a given
+        polyhedral_path_func.
+
+        If x_grid is provided, all landscapes are evaluated on that grid
+        (and num_grid_points is ignored). This is crucial for consistent
+        vectorisations across multiple LoopForest objects.
+
+        Parameters
+        ----------
+        polyhedral_path_func:
+            Function f(points_of_loop) -> scalar.
+        max_k:
+            Number of landscapes λ_1, ..., λ_max_k to compute.
+        num_grid_points:
+            Number of grid points used when x_grid is None.
+        mode:
+            "raw" or "pyramid" (see compute_landscape_kernel_for_bar).
+        label:
+            Key used to store the family in self.landscape_families.
+        min_bar_length:
+            Ignore bars with (death - birth) < min_bar_length.
+        x_grid:
+            Optional fixed grid on which to evaluate the landscapes.
+        cache:
+            Decides if landscapes is saved to loop forest or only returned.
+        """
+        if not hasattr(self, "barcode"):
+            raise AttributeError("LoopForest has no 'barcode' attribute. Did you compute it?")
+
+        # 1. Filter bars by length
+        bars = [
+            bar for bar in self.barcode
+            if (bar.death - bar.birth) >= min_bar_length
+        ]
+
+        if not bars:
+            raise ValueError(
+                f"No bars with length >= {min_bar_length}. "
+                "Increase min_bar_length or check your barcode."
+            )
+
+        # 2. Compute kernels for each bar
+        bar_kernels: Dict[int, PiecewiseLinearFunction] = {}
+        global_min_x = float("inf")
+        global_max_x = float("-inf")
+
+        for i, bar in enumerate(bars):
+            kernel = self.compute_landscape_kernel_for_bar(
+                bar,
+                polyhedral_path_func,
+                mode=mode,
+            )
+            bar_kernels[i] = kernel
+
+            global_min_x = min(global_min_x, kernel.domain[0])
+            global_max_x = max(global_max_x, kernel.domain[1])
+
+        if not np.isfinite(global_min_x) or not np.isfinite(global_max_x):
+            raise RuntimeError("Failed to infer a finite global domain for the kernels.")
+
+        if global_max_x <= global_min_x:
+            raise RuntimeError(
+                f"Non-positive domain width: [{global_min_x}, {global_max_x}]"
+            )
+
+        # 3. Common grid
+        if x_grid is None:
+            x_grid = np.linspace(global_min_x, global_max_x, num_grid_points)
+        else:
+            x_grid = np.asarray(x_grid, dtype=float)
+            if x_grid.ndim != 1 or x_grid.size < 2:
+                raise ValueError("x_grid must be a 1D array with at least 2 points")
+        num_grid_points = x_grid.size  # ensure consistency
+
+        # 4. Evaluate all kernels on the grid
+        n_bars = len(bars)
+        values = np.zeros((n_bars, num_grid_points), dtype=float)
+        for i, kernel in bar_kernels.items():
+            values[i, :] = kernel(x_grid)
+
+        # 5. Compute order statistics along the bar axis
+        # sorted_vals[k, j] = (k+1)-th largest value at x_grid[j]
+        sorted_vals = np.sort(values, axis=0)[::-1, :]  # descending along axis 0
+        max_possible_k = sorted_vals.shape[0]
+
+        landscapes: Dict[int, PiecewiseLinearFunction] = {}
+        for k in range(1, max_k + 1):
+            if k <= max_possible_k:
+                y_k = sorted_vals[k - 1, :]
+            else:
+                # If we ask for more landscapes than bars, pad with zeros.
+                y_k = np.zeros(num_grid_points, dtype=float)
+
+            landscapes[k] = PiecewiseLinearFunction(
+                xs=x_grid.copy(),
+                ys=y_k.copy(),
+                domain=(float(x_grid[0]), float(x_grid[-1])),
+                metadata={
+                    "k": k,
+                    "poly_func_name": getattr(polyhedral_path_func, "__name__", "anonymous"),
+                    "mode": mode,
+                    "min_bar_length": min_bar_length,
+                },
+            )
+
+        # 6. Assemble family object
+        loop_forest_id = getattr(self, "name", f"LoopForest@{id(self)}")
+
+        family = GeneralizedLandscapeFamily(
+            loop_forest_id=loop_forest_id,
+            poly_func_name=getattr(polyhedral_path_func, "__name__", "anonymous"),
+            rescaling=mode,
+            x_grid=x_grid,
+            bar_kernels=bar_kernels,
+            landscapes=landscapes,
+            extra_meta={
+                "num_grid_points": num_grid_points,
+                "min_bar_length": min_bar_length,
+                "global_min_x": global_min_x,
+                "global_max_x": global_max_x,
+            },
+            loop_forest=self,
+        )
+
+        # Cache on the LoopForest instance
+        if cache:
+            if not hasattr(self, "landscape_families"):
+                self.landscape_families: Dict[str, GeneralizedLandscapeFamily] = {}
+
+            key = label or family.poly_func_name
+            self.landscape_families[key] = family
+
+        return family
+
+    # ------- landscape plotting tools ----------
+
+    def plot_barcode_measurement(
+            self,
+            polyhedral_path_func: Callable[[NDArray], float],
+            bar: Optional[Bar] = None,
+            x_range: Optional[Tuple[float, float]] = None,
+            y_range: Optional[Tuple[float, float]] = None,
+            *,
+            baseline: float = 0.0,
+            ax = None,
+            linewidth: float = 2.0,
+            label: Optional[str] = None,
+        ):
+        """
+        Plot the step graph of the piecewise-constant function defined by `items`.
+        - `x_range=(xmin, xmax)` restricts the plot; if None, it's inferred from the data.
+        - Regions not covered by any interval are drawn at `baseline` (default 0).
+        If no bar is given, bar with max length is used.
+        """
+        if bar is None:
+            bar = self.max_bar()
+
+        if bar not in self.barcode:
+            raise ValueError("Bar is not in barcode of loop forest")
+
+        # Build the evaluator
+        f = self._build_piecewise_function(bar, polyhedral_path_func, baseline)
+
+        if x_range is not None:
+            xmin, xmax = map(float, x_range)
+            if xmax <= xmin:
+                raise ValueError("x_range must be (xmin, xmax) with xmax > xmin.")
+        else:
+            start= bar.cycle_reps[0].active_start
+            end = bar.cycle_reps[-1].active_end
+            xmin = start - 0.05 * (end - start)
+            xmax = end + 0.05 * (end - start)
+
+        # compute break points of piecewise constant function
+        breaks = {xmin, xmax} #Using breaks as set and then sorting is inefficient since bar is already sorted but I currently dont care
+        for loop in bar.cycle_reps:
+            # Only keep endpoints that intersect the chosen window
+            if loop.active_end >= xmin and loop.active_start <= xmax:
+                breaks.add(max(loop.active_start, xmin))
+                breaks.add(min(loop.active_end, xmax))
+
+        xs = sorted(breaks)
+        if len(xs) < 2:
+            # Degenerate range; still produce an empty baseline line
+            xs = [xmin, xmax]
+
+        # Compute y on each half-open slice [x_k, x_{k+1})
+        ys = []
+        for i in range(len(xs) - 1):
+            mid = (xs[i] + xs[i + 1]) * 0.5
+            ys.append(f(mid))
+        # Append last y to match step-api length
+        ys.append(ys[-1] if ys else baseline)
+
+        # Plot
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.figure
+
+        ax.step(xs, ys, where="post", linewidth=linewidth, label=label or "piecewise")
+        ax.set_xlim(xmin, xmax)
+        if y_range is not None:
+            ax.set_ylim(y_range[0],y_range[1])
+        #ax.axhline(baseline, linestyle="--", linewidth=1)
+        ax.set_xlabel("radius")
+        ax.set_ylabel("value")
+        if label:
+            ax.legend()
+        ax.grid(True, alpha=0.3)
+        return ax
+
+    #ChatGPT function, v1
     def plot_convolution(
             self,
             starts: List[float],
@@ -1869,7 +2761,7 @@ class LoopForest:
         """
         import matplotlib.pyplot as plt
 
-        h, xs, ys = self.build_convolution_with_indicator(starts, ends, vals, a, b, tol=tol)
+        h, xs, ys = self._build_convolution_with_indicator(starts, ends, vals, a, b, tol=tol)
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -1893,23 +2785,7 @@ class LoopForest:
 
         return ax, (h, xs, ys)
 
-    def compute_generalized_interval_landscape(self, polyhedral_path_func: Callable[[NDArray],float], bar: Optional[Bar]=None,):
-
-        if bar is None:
-            bar = self.max_bar()
-
-        if bar not in self.barcode:
-            raise ValueError("Bar is not in barcode of loop forest")
-
-        starts = [loop.active_start for loop in bar.cycle_reps]
-        ends   = [loop.active_end   for loop in bar.cycle_reps]
-        vals   = [polyhedral_path_func(self.point_cloud[loop.vertex_list]) for loop in bar.cycle_reps]
-        a, b   = bar.birth, bar.death
-
-        h, xs, ys = self.build_convolution_with_indicator(starts, ends, vals, a, b)
-
-        return h, xs, ys
-
+    #v1
     def plot_generalized_interval_landscape(self,  polyhedral_path_func: Callable[[NDArray],float], bar: Optional[Bar]=None,
                                             ax: Optional["matplotlib.axes.Axes"] =None, title: Optional[str] = None):
 
@@ -1929,6 +2805,7 @@ class LoopForest:
 
         return ax, (h, xs, ys)
 
+    #v1
     def plot_landscape_subplots(self, 
                                 polyhedral_path_funcs: List[Callable[[NDArray],float]],
                                 bar: Optional[Bar] = None,
@@ -1989,8 +2866,79 @@ class LoopForest:
 
         return axes
 
-#------------ helper functions which use classes ---------------
+    #v2
+    def plot_landscape_family(
+        self,
+        label: str,
+        ks: Optional[List[int]] = None,
+        ax: Optional["matplotlib.axes.Axes"] = None,
+        title: Optional[str] = None,
+    ):
+
+        if not hasattr(self, "landscape_families"):
+            raise AttributeError("No landscape_families attribute on this LoopForest")
+
+        family = self.landscape_families[label]
+
+        if ks is None:
+            ks = sorted(family.landscapes.keys())
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        for k in ks:
+            plf = family.landscapes[k]
+            ax.plot(plf.xs, plf.ys, label=fr"$\lambda_{k}$")
+
+        ax.set_xlabel("filtration value")
+        ax.set_ylabel("landscape value")
+        if title is None:
+            title = f"Generalized landscapes of {label}"
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        return ax
 
 
 
+
+
+# --------- Generalized Landscape functions ---------------
+
+def plot_landscape_comparison(
+    loop_forests: List[LoopForest],
+    label: str,
+    k: int = 1,
+    ax: Optional["matplotlib.axes.Axes"] = None,
+    forest_labels: Optional[List[str]] = None,
+    title: Optional[str] = None,
+):
+    for forest in loop_forests:
+        if not hasattr(forest, "landscape_families"):
+            raise AttributeError(f"No landscape_families attribute on {forest}")
+
+    families = [forest.landscape_families[label] for forest in loop_forests]
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    if forest_labels is None:
+        forest_labels = [fam.loop_forest_id for fam in families]
+
+    for fam, forest_label in zip(families, forest_labels):
+        if k not in fam.landscapes:
+            continue
+        plf = fam.landscapes[k]
+        ax.plot(plf.xs, plf.ys, label=forest_label)
+
+    ax.set_xlabel("filtration value")
+    ax.set_ylabel(fr"$\lambda_{k}$")
+    if title is None:
+        title = fr"Comparison of {label} $\lambda_{k}$ across forests (k={k})"
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    return ax
 
