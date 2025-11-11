@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Literal, Iterable, Callable
+from collections import defaultdict
 from numpy.typing import NDArray
 import itertools
 import numpy as np
@@ -1137,6 +1138,208 @@ class LoopForest:
         ax.autoscale()  # fit collections
         if show:
             plt.show()
+        return ax
+
+    def plot_at_filtration_with_dual( 
+        self,
+        filt_val: float,
+        ax=None,
+        show: bool = True,
+        fill_triangles: bool = True,
+        loop_vertex_markers: bool = False,
+        figsize: tuple[float, float] = (7, 7),
+        point_size: float = 3,
+        coloring: Literal['forest','bars'] = "forest",
+        dual_vertex_size: float = 26,
+    ):
+        if coloring == "forest":
+            if not hasattr(self, "color_map_forest"):
+                self._build_color_map_forest()
+            color_map = self.color_map_forest
+        elif coloring == "bars":
+            if not hasattr(self, "color_map_bars"):
+                self._build_color_map_bars()
+            color_map = self.color_map_bars
+        else:
+            raise ValueError("Unsupported coloring option. Use 'forest' or 'bars'.")
+
+        pts = np.asarray(self.point_cloud, dtype=float)
+        if pts.ndim != 2 or pts.shape[1] != 2:
+            raise ValueError("point_cloud must be an (n_points, 2) array-like.")
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize)
+
+        edge_info: dict[Tuple[int, int], tuple[np.ndarray, float]] = {}
+        triangle_info: dict[Tuple[int, int, int], tuple[np.ndarray, np.ndarray, float]] = {}
+        edge_to_triangles: dict[Tuple[int, int], list[Tuple[int, int, int]]] = defaultdict(list)
+        vertex_to_dual_all: dict[int, list[tuple[np.ndarray, float]]] = {i: [] for i in range(len(pts))}
+
+        for simplex, filtration in self.filtration:
+            if len(simplex) == 2:
+                i, j = simplex
+                edge_key = tuple(sorted((i, j)))
+                segment = np.array([pts[i], pts[j]])
+                edge_info[edge_key] = (segment, filtration)
+            elif len(simplex) == 3:
+                i, j, k = simplex
+                tri_key = tuple(sorted((i, j, k)))
+                coords = np.array([pts[i], pts[j], pts[k]])
+                barycenter = coords.mean(axis=0)
+                triangle_info[tri_key] = (coords, barycenter, filtration)
+                for v in tri_key:
+                    vertex_to_dual_all[v].append((barycenter, filtration))
+                for edge in itertools.combinations(tri_key, 2):
+                    edge_key = tuple(sorted(edge))
+                    edge_to_triangles[edge_key].append(tri_key)
+
+        edges_present: list[np.ndarray] = []
+        edges_future: list[np.ndarray] = []
+        for edge_key, (segment, filtration) in edge_info.items():
+            if filt_val >= filtration:
+                edges_present.append(segment)
+            else:
+                edges_future.append(segment)
+
+        tris_present: list[np.ndarray] = []
+        tris_pending: list[np.ndarray] = []
+        dual_vertices_present: list[np.ndarray] = []
+        dual_vertices_future: list[np.ndarray] = []
+        for coords, barycenter, filtration in triangle_info.values():
+            if filtration <= filt_val:
+                tris_present.append(coords)
+                dual_vertices_future.append(barycenter)
+            else:
+                tris_pending.append(coords)
+                dual_vertices_present.append(barycenter)
+
+        dual_edges_present: list[np.ndarray] = []
+        dual_edges_future: list[np.ndarray] = []
+        for edge_key, tri_keys in edge_to_triangles.items():
+            if len(tri_keys) != 2:
+                continue  # boundary edge → no dual edge
+            edge_data = edge_info.get(edge_key)
+            if edge_data is None:
+                continue
+            edge_filtration = edge_data[1]
+            tri1 = triangle_info.get(tri_keys[0])
+            tri2 = triangle_info.get(tri_keys[1])
+            if tri1 is None or tri2 is None:
+                continue
+            bary1 = tri1[1]
+            bary2 = tri2[1]
+            segment = np.array([bary1, bary2])
+            if filt_val < edge_filtration:
+                dual_edges_present.append(segment)
+            else:
+                dual_edges_future.append(segment)
+
+        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+
+        if fill_triangles and tris_present:
+            tri_coll = PolyCollection(
+                tris_present,
+                closed=True,
+                edgecolors="none",
+                facecolors="C0",
+                alpha=0.28,
+                zorder=1,
+            )
+            ax.add_collection(tri_coll)
+
+        # if dual_vertices_pending:
+        #     pending_arr = np.array(dual_vertices_pending)
+        #     ax.scatter(
+        #         pending_arr[:, 0],
+        #         pending_arr[:, 1],
+        #         s=dual_vertex_size,
+        #         c="C3",
+        #         alpha=0.6,
+        #         marker="^",
+        #         edgecolors="white",
+        #         linewidths=0.4,
+        #         zorder=3.2,
+        #         label="dual vertices (pending)",
+        #     )
+
+        if dual_vertices_present:
+            present_arr = np.array(dual_vertices_present)
+            ax.scatter(
+                present_arr[:, 0],
+                present_arr[:, 1],
+                s=dual_vertex_size * 0.75,
+                c="C3",
+                marker="o",
+                edgecolors="none",
+                zorder=2.8,
+            )
+
+        if edges_future:
+            future_edge_coll = LineCollection(
+                edges_future,
+                linewidths=0.9,
+                colors="0.45",
+                alpha=0.5,
+                zorder=1.6,
+            )
+            ax.add_collection(future_edge_coll)
+
+        if edges_present:
+            edge_coll = LineCollection(
+                edges_present,
+                linewidths=0.9,
+                colors="0",
+                zorder=2,
+                label="edges",
+            )
+            ax.add_collection(edge_coll)
+
+        if dual_edges_future:
+            dual_thin_coll = LineCollection(
+                dual_edges_future,
+                colors="C3",
+                linewidths=0.5,
+                alpha=0.5,
+                linestyle="dotted",
+                zorder=3.6,
+            )
+            ax.add_collection(dual_thin_coll)
+
+        if dual_edges_present:
+            dual_thick_coll = LineCollection(
+                dual_edges_present,
+                colors="C3",
+                linewidths=0.5,
+                alpha=1,
+                zorder=4,
+                label="dual edges",
+            )
+            ax.add_collection(dual_thick_coll)
+
+        for bar in self.barcode:
+            if filt_val >= bar.birth and filt_val < bar.death:
+                loop = bar.loop_at_filtration_value(filt_val=filt_val)
+                vs = loop.vertex_list  # type: ignore
+                if len(vs) < 2:
+                    continue
+                loop_xy = pts[vs]
+                segments = [np.array([loop_xy[i - 1], loop_xy[i]]) for i in range(len(loop_xy))]
+                loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
+                ax.add_collection(loop_coll)
+
+                if loop_vertex_markers:
+                    ax.scatter(
+                        pts[vs, 0], pts[vs, 1],
+                        s=36, color="orange", edgecolors="white", linewidths=0.8, zorder=6
+                    )
+
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_title(f"α² = {filt_val:.4g}")
+        # handles, labels = ax.get_legend_handles_labels()
+        # if handles:
+        #     ax.legend(loc="lower right", frameon=True)
+
+        # ax.autoscale()
         return ax
 
     def plot_at_filtration_old( 
