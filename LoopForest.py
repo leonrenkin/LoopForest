@@ -2937,8 +2937,8 @@ class LoopForest:
         if y_range is not None:
             ax.set_ylim(y_range[0],y_range[1])
         #ax.axhline(baseline, linestyle="--", linewidth=1)
-        ax.set_xlabel("radius")
-        ax.set_ylabel("value")
+        ax.set_xlabel("$r$")
+        # ax.set_ylabel("value")
         if label:
             ax.legend()
         ax.grid(True, alpha=0.3)
@@ -2980,8 +2980,8 @@ class LoopForest:
             # identically zero
             ax.axhline(0.0, linestyle="--", linewidth=1)
 
-        ax.set_xlabel("radius")
-        ax.set_ylabel(r"$(f * \mathbf{1}_{[a,b]})(x)$")
+        ax.set_xlabel("$r$")
+        # ax.set_ylabel(r"$f * \mathbf{1}_{[a,b]})")
         if title is not None:
             ax.set_title(title)
         ax.grid(True, alpha=0.3)
@@ -3015,6 +3015,7 @@ class LoopForest:
                                 column_titles: Optional[List[str]] = None,
                                 xrange_dict: Optional[ dict[tuple[int,int], tuple[float,float]] ]= None,
                                 yrange_dict: Optional[ dict[tuple[int,int], tuple[float,float]] ] = None,
+                                figsize = None
                                 ):
         """
         Plot point cloud, barcode measurement and generalized barcode of input bar and measurement function in polyhedral_path_functions
@@ -3029,8 +3030,8 @@ class LoopForest:
         
         if bar not in self.barcode:
             raise ValueError("Bar is not in barcode of loop forest")
-
-        figsize = (4*(len(polyhedral_path_funcs)+1),8)
+        if figsize is None:
+            figsize = (4*(len(polyhedral_path_funcs)+1),8)
 
         fig, axes = plt.subplots(nrows = 2, ncols= len(polyhedral_path_funcs)+1, figsize=figsize)
 
@@ -3038,7 +3039,7 @@ class LoopForest:
         axes[0,0].set_aspect('equal')
 
         axes[1,0].axis("off")
-        axes[0,0].set_title("Point Cloud")
+        axes[0,0].set_title("point cloud")
 
 
         for i in range(0, len(polyhedral_path_funcs)):
@@ -3064,9 +3065,6 @@ class LoopForest:
                     axes[0,i+1].set_ylim(yrange_dict[(0,i+1)])
                 if (1,i+1) in yrange_dict:
                     axes[1,i+1].set_ylim(yrange_dict[(1,i+1)])
-        plt.tight_layout()
-        plt.show()
-
         return fig, axes
 
     #v2
