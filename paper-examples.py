@@ -1,0 +1,64 @@
+#%%
+import numpy as np
+import matplotlib.pyplot as plt
+from LoopForest import LoopForest
+
+plt.rcParams.update({
+    "text.usetex": False,
+    "font.family": "sans-serif",
+    "font.size": 6,
+})
+
+
+%load_ext autoreload
+%autoreload 3
+# %%
+!mkdir -p paper_figures
+
+#%% Example 1: distinguish shapes by their landscapes\
+
+from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril
+from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
+
+circle = sample_noisy_circle(1000, noise_std=0.01, seed=4, radius = 0.36)
+star = sample_noisy_star(1000, spikes=5, amplitude=0.5, noise_std=0.03, seed=42, radius =0.75)
+ellipse = sample_noisy_ellipse(1000, a=0.9,b=0.4, noise_std = 0.03)
+circle_line = sample_noisy_circle_with_tendril(1000, radius=0.5, tendril_length=0.3, tendril_fraction=0.05, noise_std=0.02, tendril_width_deg=2)
+circle_forest = LoopForest(circle)
+star_forest = LoopForest(star)
+ellipse_forest = LoopForest(ellipse)
+circle_line_forest = LoopForest(circle_line)
+
+#yrange_dict to make y-axis consistent between plots
+xrange_dict = {(0,0): (-1.25,1.25),
+               (0,1): (0,1),
+               (0,2): (0,1),
+               (0,3): (0,1),
+               (1,1): (0,1.5),
+                (1,2): (0,1.5),
+                (1,3): (0,1.5)}
+yrange_dict = {
+               (0,0): (-1.25,1.25),
+               (0,1): (0, 12),
+               (0,2): (0,  2),
+               (0,3): (0, 35),
+               (1,1): (0, 3),
+               (1,2): (0, .6),
+               (1,3): (0,3)}
+
+column_titles = ["Vol", "EVol", "$K$"]
+
+for name, forest in [("circle", circle_forest), ("ellipse", ellipse_forest), ("circle_line", circle_line_forest), ("star", star_forest)]:
+    fig, axes = forest.plot_landscape_subplots(polyhedral_path_funcs=[polygon_length, polygon_area, curvature_excess], 
+                                       yrange_dict=yrange_dict, 
+                                       column_titles=column_titles,
+                                       figsize=(4,2))
+    for key, value in xrange_dict.items():
+        axes[key].set_xlim(value[0], value[1])
+    for key, value in yrange_dict.items():
+        axes[key].set_ylim(value[0], value[1])
+    fig.tight_layout(pad=.0)
+    fig.savefig(f"paper_figures/landscape_{name}.pdf", dpi=300, transparent=True, bbox_inches='tight')
+    plt.show(fig)
+
+# %%
