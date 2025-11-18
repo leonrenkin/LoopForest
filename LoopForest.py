@@ -263,7 +263,7 @@ class Node:
     Each node has a loop representative."""
     id: int #does not need to know its own node
     filt_val: float
-    type: Literal["leaf", "root", "merge", "update"]            #Special case if points are not in general position: a node can be type "merge" and also be a root, it then still appears in the root list
+    type: Literal["leaf", "root", "merge", "update"]            #a node can be type "merge" and also be a root, it then still appears in the root list
     loop: Loop                                                  #Loops are saved as list of indices of simplex
     children: set[int]                                    #ids of children
     parent: Optional[int] = None
@@ -1398,6 +1398,7 @@ class LoopForest:
         figsize: tuple[float, float] = (7, 7), 
         point_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
+        title: Optional[str] = None,
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -1504,7 +1505,10 @@ class LoopForest:
 
         # --- Aesthetics
         ax.set_aspect("equal", adjustable="box")
-        ax.set_title(f"α ≤ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
+        if title is None:
+            ax.set_title(f"α ≤ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
+        else:
+            ax.set_title(title)
         #ax.set_xlabel("x")
         #ax.set_ylabel("y")
         # A simple legend (points + edges); loop colors are self-explanatory on top
@@ -1711,134 +1715,12 @@ class LoopForest:
                     )
 
         ax.set_aspect("equal", adjustable="box")
-        ax.set_title(f"α² = {filt_val:.4g}")
+        ax.set_title(f"α = {filt_val:.4g}")
         # handles, labels = ax.get_legend_handles_labels()
         # if handles:
         #     ax.legend(loc="lower right", frameon=True)
 
         # ax.autoscale()
-        return ax
-
-    def plot_at_filtration_old( 
-        self,
-        filt_val: float,
-        ax=None,
-        show: bool = True,
-        fill_triangles: bool = True,
-        loop_vertex_markers: bool = False,
-        figsize: tuple[float, float] = (7, 7), 
-        point_size: float = 3,
-    ):
-        """
-        Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
-        and overlay the loops of the nodes active at filt_val.
-
-        Notes
-        -----
-        - GUDHI's AlphaComplex / SimplexTree work in α² units (squared radius).
-        Pass the same units here.
-        - Uses SimplexTree.get_filtration(), which is sorted by increasing filtration.
-
-        Parameters
-        ----------
-        filt_val : float
-            Filtration threshold (α² units).
-        ax : matplotlib.axes.Axes or None
-            Axes to draw on; if None, a new figure+axes are created.
-        show : bool
-            If True, calls plt.show() when done.
-        fill_triangles : bool
-            If True, lightly fill triangles present at this filtration.
-        loop_vertex_markers : bool
-            If True, mark the vertices used in each loop.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-        """
-        
-
-        # --- Prep
-        pts = np.asarray(self.point_cloud, dtype=float)
-        if pts.ndim != 2 or pts.shape[1] != 2:
-            raise ValueError("point_cloud must be an (n_points, 2) array-like.")
-
-        if ax is None:
-            _, ax = plt.subplots(figsize=figsize)
-
-        # --- Collect edges and triangles present at this filtration value
-        edges_xy = []      # list of [[x1,y1],[x2,y2]]
-        tris_xy = []       # list of [[x1,y1],[x2,y2],[x3,y3]]
-        for simplex, f in self.filtration:
-            if f > filt_val:
-                # Filtration is sorted non-decreasing → safe to stop here
-                break
-            if len(simplex) == 2:  # edge
-                i, j = simplex
-                edges_xy.append([pts[i], pts[j]])
-            elif len(simplex) == 3:  # triangle
-                i, j, k = simplex
-                tris_xy.append([pts[i], pts[j], pts[k]])
-
-        # --- Base scatter
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
-
-        # --- Draw triangles first (under edges)
-        if fill_triangles and tris_xy:
-            tri_coll = PolyCollection(
-                tris_xy, closed=True, edgecolors="none", facecolors="C0", alpha=0.15, zorder=1
-            )
-            ax.add_collection(tri_coll)
-
-        # --- Draw edges
-        if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=0.8, colors="0.65", zorder=2, label="edges")
-            ax.add_collection(edge_coll)
-
-        
-
-        # --- Overlay loops from active nodes at filt_val
-        active = self.active_nodes_at(filt_val)
-        colors = sns.color_palette("tab20", len(active))
-        for idx, node in enumerate(active):
-            vlist = getattr(node.loop, "vertex_list", None)
-            if node.loop is None or vlist is None or vlist.size == 0:
-                continue
-            vs = list(node.loop.vertex_list)
-            if len(vs) < 2:
-                continue
-
-            # Build closed polyline for the loop
-            closed_vs = vs + [vs[0]]
-            loop_xy = pts[closed_vs]  # shape: (m, 2)
-
-            # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-            segments = [np.array([loop_xy[i], loop_xy[i + 1]]) for i in range(len(loop_xy) - 1)]
-
-            # Thicker colored edges along the loop
-            loop_coll = LineCollection(segments, linewidths=1.8, colors=[colors[idx]], zorder=5)
-            ax.add_collection(loop_coll)
-
-            # Optional vertex markers for the loop
-            if loop_vertex_markers:
-                ax.scatter(
-                    pts[vs, 0], pts[vs, 1],
-                    s=36, color="orange", edgecolors="white", linewidths=0.8, zorder=6
-                )
-
-        # --- Aesthetics
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_title(f"α² ≤ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        # A simple legend (points + edges); loop colors are self-explanatory on top
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(loc="lower right", frameon=True)
-
-        ax.autoscale()  # fit collections
-        if show:
-            plt.show()
         return ax
 
     #ChatGPT plotting function
@@ -2034,17 +1916,21 @@ class LoopForest:
             plt.show()
         return ax
 
-    #ChatGPT plotting function
-    def _plot_barcode(
+    # ChatGPT plotting function
+    def plot_barcode(
         self,
         *,
         ax=None,
-        sort: str | None = "length",   # "length" | "birth" | "death" | None
+        sort: str | None = "birth",   # "length" | "birth" | "death" | None
         title: str = "Barcode",
         xlabel: str = "filtration value",
+        coloring: Literal["forest", "bars"] = "forest",
+        max_bars: int = 0,
+        min_bar_length: float = 0.0,
     ):
         """
         Plot a 1D barcode from self.barcode (a set[Bar]).
+
         Each Bar contributes a horizontal segment from birth to death.
         If death is +inf, an arrow is drawn to the right.
 
@@ -2054,10 +1940,22 @@ class LoopForest:
             If given, draw on this axes. Otherwise a new figure/axes is created.
         sort : {"length","birth","death",None}
             Sort bars before plotting (None preserves current order).
+            Default is "birth".
         title : str
             Plot title.
         xlabel : str
             Label for the x-axis.
+        coloring : {"forest","bars"}
+            Which color scheme to use:
+            - "forest": use self.color_map_forest (tree-structured colors).
+            - "bars":   use self.color_map_bars (ignores tree structure).
+            If the chosen color map does not exist yet, it is built as in
+            `plot_at_filtration`.
+        max_bars : int
+            If > 0, display at most this many bars, keeping the longest ones
+            (by lifespan). 0 means show all bars.
+        min_bar_length : float
+            Filter out bars with lifespan < min_bar_length before plotting.
 
         Returns
         -------
@@ -2071,43 +1969,90 @@ class LoopForest:
         if not getattr(self, "barcode", None):
             raise ValueError("No bars to plot: `self.barcode` is empty.")
 
-        # Work on a copy so we don't mutate user order unless requested.
+        # ---- Prepare color map (same logic as plot_at_filtration) ----
+        if coloring == "forest":
+            if not hasattr(self, "color_map_forest"):
+                self._build_color_map_forest()
+            color_map = self.color_map_forest
+        elif coloring == "bars":
+            if not hasattr(self, "color_map_bars"):
+                self._build_color_map_bars()
+            color_map = self.color_map_bars
+        else:
+            # Fallback: no special coloring
+            color_map = {}
+
+        # ---- Work on a copy so we don't mutate original order ----
         bars = list(self.barcode)
 
-        # Optional sorting
+        # Filter by minimum length (Gudhi-like)
+        if min_bar_length > 0.0:
+            bars = [b for b in bars if b.lifespan() >= min_bar_length]
+
+        if not bars:
+            raise ValueError(
+                "No bars to plot after applying min_bar_length filter "
+                f"(min_bar_length = {min_bar_length})."
+            )
+
+        # Limit to longest `max_bars` bars if requested (Gudhi-like)
+        if max_bars and max_bars > 0 and len(bars) > max_bars:
+            bars = sorted(bars, key=lambda b: b.lifespan(), reverse=True)[:max_bars]
+
+        # Optional sorting for display
         if sort == "birth":
             bars.sort(key=lambda b: (b.birth, b.death))
         elif sort == "death":
             def dkey(b):
-                return (math.inf if not math.isfinite(b.death) else b.death, b.birth)
+                d = b.death
+                return (math.inf if not math.isfinite(d) else d, b.birth)
             bars.sort(key=dkey)
         elif sort == "length":
             def length(b):
-                return (math.inf if not math.isfinite(b.death) else b.death) - b.birth
+                d = b.death
+                d_val = math.inf if not math.isfinite(d) else d
+                return d_val - b.birth
             bars.sort(key=length, reverse=True)
+        elif sort is None:
+            # Keep whatever order came out of filtering
+            pass
+        else:
+            raise ValueError(
+                f"Unknown sort option {sort!r}. "
+                "Expected one of 'birth', 'death', 'length', or None."
+            )
 
-        # Create axes if needed
+        n_bars = len(bars)
+
+        # ---- Create axes if needed, with controlled figure height ----
         created_ax = False
         if ax is None:
-            fig, ax = plt.subplots(figsize=(6, max(2.0, 0.35 * len(bars))))
+            # Height grows sublinearly and is capped to avoid gigantic figures
+            base_height = 2.5
+            extra_height = 0.12 * min(n_bars, 80)   # at most ~9.1 total
+            fig, ax = plt.subplots(figsize=(7, base_height + extra_height))
             created_ax = True
         else:
             fig = ax.figure
 
-        # Determine x-limits with a bit of padding
+        # ---- Determine x-limits with a bit of padding ----
         births = np.array([b.birth for b in bars], dtype=float)
         deaths = np.array([b.death for b in bars], dtype=float)
         finite_deaths = deaths[np.isfinite(deaths)]
 
         xmin = float(np.nanmin(births))
-        xmax = float(np.nanmax(finite_deaths)) if finite_deaths.size else float(np.nanmax(births))
+        if finite_deaths.size:
+            xmax = float(np.nanmax(finite_deaths))
+        else:
+            xmax = float(np.nanmax(births))
+
         if not np.isfinite(xmax):  # extreme corner case
             xmax = xmin
 
         pad = (xmax - xmin) * 0.05 if xmax > xmin else 1.0
         ax.set_xlim(xmin - pad, xmax + pad)
 
-        # Draw segments
+        # ---- Draw segments ----
         for i, b in enumerate(bars):
             x0, x1 = float(b.birth), float(b.death)
 
@@ -2115,27 +2060,43 @@ class LoopForest:
             if math.isfinite(x1) and x1 < x0:
                 x0, x1 = x1, x0
 
-            if math.isfinite(x1):
-                ax.hlines(y=i, xmin=x0, xmax=x1, linewidth=2)
-                # Optional end ticks (comment out if you don't want them)
-                ax.plot([x0, x1], [i, i], linestyle="None", marker="|", markersize=8)
-            else:
-                # Draw to the right with an arrow for infinity
-                right = ax.get_xlim()[1]
-                ax.hlines(y=i, xmin=x0, xmax=right - 0.25 * pad, linewidth=2)
-                ax.annotate(
-                    "",
-                    xy=(right - 0.15 * pad, i),
-                    xytext=(x0, i),
-                    arrowprops=dict(arrowstyle="->", lw=2),
-                    va="center"
-                )
+            color = color_map.get(b, None)
+            line_kwargs = {
+                "y": i,
+                "xmin": x0,
+                "xmax": x1 if math.isfinite(x1) else ax.get_xlim()[1] - 0.25 * pad,
+                "linewidth": 3.0,  # thicker bars
+            }
+            if color is not None:
+                line_kwargs["color"] = color
 
-        # Cosmetics
+            if math.isfinite(x1):
+                # Finite bar: simple thick line, NO endpoint markers
+                ax.hlines(**line_kwargs)
+            else:
+                # Infinite bar: truncated line + arrow
+                right = ax.get_xlim()[1]
+                line_kwargs["xmax"] = right - 0.25 * pad
+                ax.hlines(**line_kwargs)
+
+                # Draw arrow for infinity
+                arrow_kwargs = {
+                    "xy":   (right - 0.15 * pad, i),
+                    "xytext": (x0, i),
+                    "arrowprops": dict(arrowstyle="->", lw=2),
+                    "va": "center",
+                }
+                if color is not None:
+                    arrow_kwargs["arrowprops"]["color"] = color
+
+                ax.annotate("", **arrow_kwargs)
+
+        # ---- Cosmetics ----
         ax.set_yticks([])
         ax.set_xlabel(xlabel)
         ax.set_title(title)
         ax.grid(True, axis="x", linestyle=":", alpha=0.5)
+        ax.set_ylim(-1, n_bars)  # keep bars nicely framed
         fig.tight_layout()
 
         # If we created the axes, show it immediately (so this works in scripts)
@@ -2218,6 +2179,7 @@ class LoopForest:
         *,
         fps: int = 20,
         frames: int = 200,
+        coloring: Literal["forest", "bars"] = "forest",
         with_barcode: bool = False,
         t_min: Optional[float] = None,
         t_max: Optional[float] = None,
@@ -2225,6 +2187,7 @@ class LoopForest:
         cloud_figsize: tuple[float, float] = (6.0, 6.0),
         total_figsize: Optional[tuple[float, float]] = None,
         plot_kwargs: Optional[dict] = None,
+        barcode_kwargs: Optional[dict] = None,
     ):
         """
         Create an animation of the loop forest over the filtration.
@@ -2232,19 +2195,14 @@ class LoopForest:
         Parameters
         ----------
         filename : str | None, optional
-            If given, the animation is written to this path. The extension
-            determines the writer (".mp4" uses FFMpegWriter, ".gif" uses
-            PillowWriter when available). If None, the animation object is
-            just returned.
+            If given, the animation is written to this path.
         fps : int, optional
             Frames per second for the saved animation.
-        max_frames : int, optional
-            Soft upper bound on the number of frames. If the filtration has
-            more distinct values than this, a subsampled set of filtration
-            values is used.
+        frames : int, optional
+            Number of time steps (frames) sampled between t_min and t_max.
         with_barcode : bool, optional
-            If True, draw a second panel with the barcode and a vertical line
-            indicating the current filtration value.
+            If True, show a second panel with the barcode and a moving vertical
+            line indicating the current filtration value.
         t_min, t_max : float | None, optional
             Optional lower/upper bounds on the filtration values to animate.
         dpi : int, optional
@@ -2257,10 +2215,22 @@ class LoopForest:
         plot_kwargs : dict | None, optional
             Extra keyword arguments forwarded to ``plot_at_filtration``.
             For example::
-                plot_kwargs=dict(fill_triangles=True,
-                                 loop_vertex_markers=False,
-                                 point_size=3,
-                                 coloring="forest")
+                plot_kwargs=dict(
+                    fill_triangles=True,
+                    loop_vertex_markers=False,
+                    point_size=3,
+                    coloring="forest",
+                )
+        barcode_kwargs : dict | None, optional
+            Extra keyword arguments forwarded to ``_plot_barcode`` **except**
+            ``ax`` and ``coloring``, which are managed by this method.
+            For example::
+                barcode_kwargs=dict(
+                    max_bars=150,
+                    min_bar_length=1e-3,
+                    sort="length",
+                    title="Barcode",
+                )
 
         Returns
         -------
@@ -2277,31 +2247,63 @@ class LoopForest:
         if not hasattr(self, "filtration") or not self.filtration:
             raise ValueError("LoopForest has no filtration data to animate.")
 
-        
         # Optional restriction to a time window
         if t_min is None:
-            t_min = 0
+            t_min = 0.0
         if t_max is None:
-            t_max = max( node.filt_val for node in self.nodes.values() )
+            t_max = max(node.filt_val for node in self.nodes.values())
 
+        # Uniformly spaced in filtration value → uniform speed
         frame_times = np.linspace(t_min, t_max, frames).tolist()
 
-        # 3) Set up figure and axes
+        # ---- Common kwargs for plot_at_filtration (cloud panel) ----
+        if plot_kwargs is None:
+            plot_kwargs = {}
+        # Reasonable defaults (only used if not explicitly overridden)
+        plot_kwargs = {
+            "fill_triangles": True,
+            "loop_vertex_markers": False,
+            "point_size": 3,
+            "coloring": coloring,
+            "show": False,   # important: we manage the figure ourselves
+            **plot_kwargs,
+        }
+
+        # ---- Barcode kwargs & shared color dict ----
         if with_barcode:
             if total_figsize is None:
                 total_figsize = (10.0, 5.0)
+
             fig, (ax_cloud, ax_bar) = plt.subplots(
-                1, 2, figsize=total_figsize,
-                gridspec_kw={"width_ratios": [3, 2]}
+                1, 2,
+                figsize=total_figsize,
+                gridspec_kw={"width_ratios": [3, 2]},
             )
+
             # Draw the (static) barcode once
             if not getattr(self, "barcode", None):
                 raise ValueError("`with_barcode=True` but `self.barcode` is empty.")
-            self._plot_barcode(
+
+            if barcode_kwargs is None:
+                barcode_kwargs = {}
+            # Do not let the caller override ax or coloring here
+            barcode_kwargs = {
+                k: v for k, v in barcode_kwargs.items()
+                if k not in {"ax", "coloring"}
+            }
+            # Defaults for the barcode panel – user can override sort/title/xlabel
+            barcode_kwargs = {
+                "sort": "length",
+                "title": "Barcode",
+                "xlabel": "filtration value",
+                **barcode_kwargs,
+            }
+            # Enforce *same* coloring as in plot_at_filtration
+            barcode_kwargs["coloring"] = plot_kwargs[coloring]
+
+            self.plot_barcode(
                 ax=ax_bar,
-                sort="length",
-                title="Barcode",
-                xlabel="filtration value",
+                **barcode_kwargs,
             )
 
             # Vertical line that will move with the filtration
@@ -2312,19 +2314,7 @@ class LoopForest:
             ax_bar = None
             barcode_line = None
 
-        if plot_kwargs is None:
-            plot_kwargs = {}
-        # Reasonable defaults (only used if not explicitly overridden)
-        plot_kwargs = {
-            "fill_triangles": True,
-            "loop_vertex_markers": False,
-            "point_size": 3,
-            "coloring": "forest",
-            "show": False,   # important: we manage the figure ourselves
-            **plot_kwargs,
-        }
-
-
+        # ---- Helper to draw a single frame on the cloud panel ----
         def _draw_frame_at_time(t: float):
             """Helper: clear the cloud axis and redraw for filtration value t."""
             ax_cloud.clear()
@@ -2341,7 +2331,7 @@ class LoopForest:
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7),
             )
 
-        # 4) Animation callbacks
+        # ---- Animation callbacks ----
         def init():
             _draw_frame_at_time(frame_times[0])
             if with_barcode and barcode_line is not None:
@@ -2364,7 +2354,7 @@ class LoopForest:
             blit=False,
         )
 
-        # 5) Optionally write to disk
+        # ---- Optionally write to disk ----
         if filename is not None:
             fname = str(filename)
             ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
@@ -3104,9 +3094,6 @@ class LoopForest:
         return ax
 
 
-
-
-
 # --------- Generalized Landscape functions ---------------
 
 def plot_landscape_comparison(
@@ -3145,3 +3132,238 @@ def plot_landscape_comparison(
 
     return ax
 
+# -------- Animate Comparison -----------------
+
+from typing import Optional, Tuple
+
+def animate_filtration_pair(
+    forest1,
+    forest2,
+    filename: Optional[str] = None,
+    *,
+    fps: int = 20,
+    frames: int = 200,
+    t_min: Optional[float] = None,
+    t_max: Optional[float] = None,
+    dpi: int = 200,
+    total_figsize: Optional[Tuple[float, float]] = None,
+    plot_kwargs_forest1: Optional[dict] = None,
+    plot_kwargs_forest2: Optional[dict] = None,
+    barcode_kwargs_forest1: Optional[dict] = None,
+    barcode_kwargs_forest2: Optional[dict] = None,
+):
+    """
+    Animate two LoopForests side-by-side: for each forest, show the evolving
+    cycle representatives in the point cloud together with its barcode.
+
+    The filtration panels and barcodes are styled via `plot_at_filtration` and
+    `_plot_barcode`, so they match what `animate_filtration` produces.
+
+    Parameters
+    ----------
+    forest1, forest2 : LoopForest
+        The two forests to animate.
+    filename : str or None, optional
+        If not None, the animation is also written to this file.
+        The extension ('.mp4', '.gif', etc.) determines the writer.
+    fps : int, optional
+        Frames per second for the saved animation.
+    frames : int, optional
+        Number of frames in the animation (shared time grid).
+    t_min, t_max : float or None, optional
+        Filtration time window. If None, t_min = 0 and t_max is the max
+        filtration value across both forests.
+    dpi : int, optional
+        DPI for saving.
+    total_figsize : (float, float) or None, optional
+        Overall figure size. If None, a reasonable default is used.
+    plot_kwargs_forest1, plot_kwargs_forest2 : dict or None, optional
+        Extra kwargs forwarded to `plot_at_filtration` for each forest.
+        Used on the *cloud/loop* panels.
+    barcode_kwargs_forest1, barcode_kwargs_forest2 : dict or None, optional
+        Extra kwargs forwarded to `_plot_barcode` for each forest.
+
+    Returns
+    -------
+    anim : matplotlib.animation.FuncAnimation
+    fig : matplotlib.figure.Figure
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import FuncAnimation, FFMpegWriter
+
+    # --- 1) Sanity checks -----------------------------------------------------
+    for forest, name in ((forest1, "forest1"), (forest2, "forest2")):
+        if not hasattr(forest, "filtration") or not forest.filtration:
+            raise ValueError(f"{name} has no filtration data to animate.")
+        if not getattr(forest, "barcode", None):
+            raise ValueError(f"{name} has an empty barcode.")
+
+    # --- 2) Time grid ---------------------------------------------------------
+    if t_min is None:
+        t_start: float = 0.0
+    else:
+        t_start = float(t_min)
+
+    if t_max is None:
+        max1 = max(node.filt_val for node in forest1.nodes.values())
+        max2 = max(node.filt_val for node in forest2.nodes.values())
+        t_end: float = float(max(max1, max2))*1.05
+    else:
+        t_end = float(t_max)*1.05
+
+    n_frames: int = int(frames)
+
+    frame_times = np.linspace(start = t_start, stop = t_end, num = n_frames).tolist()
+
+    # --- 3) Figure layout: 2x2 (clouds on top, barcodes below) ----------------
+    if total_figsize is None:
+        total_figsize = (12.0, 8.0)
+
+    fig, ((ax_cloud_1, ax_cloud_2),
+          (ax_bar_1,   ax_bar_2)) = plt.subplots(
+        2,
+        2,
+        figsize=total_figsize,
+        gridspec_kw={"height_ratios": [5, 2]},
+    )
+
+    # --- 4) Barcode plotting --------------------------------------------------
+    # Base kwargs to resemble your existing barcode style
+    base_barcode_kwargs = {
+        "sort": "length",
+        "xlabel": "filtration value",
+    }
+
+    if barcode_kwargs_forest1 is None:
+        barcode_kwargs_forest1 = {}
+    if barcode_kwargs_forest2 is None:
+        barcode_kwargs_forest2 = {}
+
+    kwargs_bar_1 = {**base_barcode_kwargs, **barcode_kwargs_forest1}
+    kwargs_bar_2 = {**base_barcode_kwargs, **barcode_kwargs_forest2}
+
+    if "title" not in kwargs_bar_1:
+        kwargs_bar_1["title"] = "Barcode"
+    if "title" not in kwargs_bar_2:
+        kwargs_bar_2["title"] = "Barcode"
+
+    forest1.plot_barcode(ax=ax_bar_1, **kwargs_bar_1)
+    forest2.plot_barcode(ax=ax_bar_2, **kwargs_bar_2)
+
+    # Force both barcodes to share the same x-range as the animation time
+    ax_bar_1.set_xlim(t_start, t_end)
+    ax_bar_2.set_xlim(t_start, t_end)
+
+    # Vertical lines tracking the current filtration value
+    t0 = frame_times[0]
+    barcode_line_1 = ax_bar_1.axvline(t0, color="k", linewidth=2)
+    barcode_line_2 = ax_bar_2.axvline(t0, color="k", linewidth=2)
+
+    # --- 5) Filtration plot kwargs (match animate_filtration defaults) --------
+    base_plot_kwargs = {
+        "fill_triangles": True,
+        "loop_vertex_markers": False,
+        "point_size": 3,
+        "coloring": "forest",  # uses the forest's color dict, shared with barcode
+        "show": False,         # we manage figure/axes ourselves
+    }
+
+    if plot_kwargs_forest1 is None:
+        plot_kwargs_forest1 = {}
+    if plot_kwargs_forest2 is None:
+        plot_kwargs_forest2 = {}
+
+    kwargs_cloud_1 = {**base_plot_kwargs, **plot_kwargs_forest1}
+    kwargs_cloud_2 = {**base_plot_kwargs, **plot_kwargs_forest2}
+
+    if "title" not in plot_kwargs_forest1:
+        plot_kwargs_forest1["title"] = "Acitve Loops"
+    if "title" not in plot_kwargs_forest2:
+        plot_kwargs_forest2["title"] = "Acitve Loops"
+
+    # --- 6) Helpers to draw a single frame -----------------------------------
+    def _draw_frame_at_time(t: float):
+        # First forest
+        ax_cloud_1.clear()
+        forest1.plot_at_filtration(filt_val=t, ax=ax_cloud_1, **kwargs_cloud_1)
+        ax_cloud_1.text(
+            0.02, 0.98, rf"$\alpha = {t:.3g}$",
+            transform=ax_cloud_1.transAxes,
+            va="top",
+            ha="left",
+            fontsize=11,
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7),
+        )
+
+        # Second forest
+        ax_cloud_2.clear()
+        forest2.plot_at_filtration(filt_val=t, ax=ax_cloud_2, **kwargs_cloud_2)
+        ax_cloud_2.text(
+            0.02, 0.98, rf"$\alpha = {t:.3g}$",
+            transform=ax_cloud_2.transAxes,
+            va="top",
+            ha="left",
+            fontsize=11,
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7),
+        )
+
+    def _align_barcode_axes():
+        # Make barcode axes have same left/right as their corresponding cloud axes
+        for cloud_ax, bar_ax in ((ax_cloud_1, ax_bar_1), (ax_cloud_2, ax_bar_2)):
+            cloud_pos = cloud_ax.get_position()
+            bar_pos = bar_ax.get_position()
+            # Keep bar's vertical position/height, but match horizontal start and width
+            bar_ax.set_position([
+                cloud_pos.x0,    # left
+                bar_pos.y0,      # bottom
+                cloud_pos.width, # width
+                bar_pos.height,  # height
+            ])
+
+    # --- 7) Animation callbacks -----------------------------------------------
+    def init():
+        _draw_frame_at_time(frame_times[0])
+        _align_barcode_axes()
+        t_init = frame_times[0]
+        barcode_line_1.set_xdata([t_init, t_init])
+        barcode_line_2.set_xdata([t_init, t_init])
+        return []
+
+    def update(frame_idx: int):
+        t = frame_times[frame_idx]
+        _draw_frame_at_time(t)
+        _align_barcode_axes()
+        barcode_line_1.set_xdata([t, t])
+        barcode_line_2.set_xdata([t, t])
+        return []
+
+    anim = FuncAnimation(
+        fig,
+        update,
+        frames=len(frame_times),
+        init_func=init,
+        blit=False,
+    )
+
+    # --- 8) Optional save to disk ---------------------------------------------
+    if filename is not None:
+        fname = str(filename)
+        ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+        if ext == "mp4":
+            writer = FFMpegWriter(fps=fps, bitrate=2000)
+            anim.save(fname, writer=writer, dpi=dpi)
+        elif ext in {"gif", "gifv"}:
+            try:
+                from matplotlib.animation import PillowWriter
+            except ImportError as e:
+                raise RuntimeError(
+                    "Saving as GIF requires Pillow. Install it with `pip install pillow`."
+                ) from e
+            writer = PillowWriter(fps=fps)
+            anim.save(fname, writer=writer, dpi=dpi)
+        else:
+            # Fallback to default writer chosen by matplotlib
+            anim.save(fname, dpi=dpi, fps=fps)
+
+    return anim, fig
