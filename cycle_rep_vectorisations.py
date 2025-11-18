@@ -1,5 +1,6 @@
 import math
 from typing import Iterable, Tuple
+from numpy.typing import NDArray
 import numpy as np
 
 _EPS = 1e-12
@@ -123,3 +124,46 @@ def curvature_excess(points: Iterable[Tuple[float, float]]) -> float:
     """
     K = total_curvature(points, enforce_ccw=True)
     return K *(1.0/ (2*math.pi) )- 1.0
+
+def signed_chain_edge_length(signed_simplices, point_cloud: NDArray[np.float64]) -> float:
+    """
+    CycleValueFunc for signed chains: total edge length.
+
+    Parameters
+    ----------
+    rep
+        A SignedChain-like object with an attribute
+            rep.signed_simplices : iterable of (simplex, sign)
+        where `simplex` is an iterable of vertex indices (e.g. (i, j)),
+        and `sign` is typically ±1 (orientation).
+    point_cloud : np.ndarray, shape (n_points, dim)
+        Ambient point cloud.
+
+    Returns
+    -------
+    float
+        Sum of Euclidean lengths of all 1-simplices in the chain.
+
+    Notes
+    -----
+    - Only simplices of length 2 (edges) are used.
+    - The sign is ignored in the magnitude (we use abs(sign)), so this is
+      "unsigned total length". If you want oriented total length, replace
+      `abs(sign)` by `sign`.
+    """
+    total = 0.0
+
+    for simplex, sign in signed_simplices:
+        # Make sure we have exactly two vertices: an edge
+        verts_idx = list(simplex)
+        if len(verts_idx) != 2:
+            continue
+
+        p0 = point_cloud[verts_idx[0]]
+        p1 = point_cloud[verts_idx[1]]
+        length = float(np.linalg.norm(p1 - p0))
+
+        # Use abs(sign) so orientation doesn't cancel length
+        total += length
+
+    return total
