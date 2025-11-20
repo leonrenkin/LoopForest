@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from LoopForest import LoopForest
+from PersistenceForest import PersistenceForest
 
 plt.rcParams.update({
     "text.usetex": False,
@@ -60,5 +61,15 @@ for name, forest in [("circle", circle_forest), ("ellipse", ellipse_forest), ("c
     fig.tight_layout(pad=.0)
     fig.savefig(f"paper_figures/landscape_{name}.pdf", dpi=300, transparent=True, bbox_inches='tight')
     plt.show(fig)
+
+# %%
+double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
+double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
+
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (10,5))
+double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, loop_edge_arrows=True, title="Signed Cycle",show=False)
+double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, loop_edge_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
+fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=True, bbox_inches='tight')
+plt.show()
 
 # %%

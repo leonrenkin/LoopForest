@@ -91,6 +91,32 @@ class SignedChain:
     def cancel_simplex(self, simplex: list[int]) -> "SignedChain":
         return SignedChain(signed_simplices= self.signed_simplices.difference({(tuple(simplex),1),(tuple(simplex),-1)}) )
     
+    def without_double_edges(self) -> "SignedChain":
+        """
+        Return a new SignedChain where edges that appear with opposite
+        orientations cancel out.
+
+        If an underlying simplex appears only with one orientation, it is kept.
+        """
+        # aggregate orientations per underlying simplex
+        coeffs: Dict[tuple, int] = {}
+        for simplex, orientation in self.signed_simplices:
+            coeffs[simplex] = coeffs.get(simplex, 0) + int(orientation)
+
+        cleaned: Set[tuple] = set()
+        for simplex, c in coeffs.items():
+            if c > 0:
+                cleaned.add((simplex, 1))
+            elif c < 0:
+                cleaned.add((simplex, -1))
+            # if c == 0, the +1 and -1 cancel -> drop this edge completely
+        
+        return SignedChain(
+            signed_simplices=cleaned,
+            active_start=self.active_start,
+            active_end=self.active_end,
+        )
+
     def segments(self, point_cloud: NDArray):
         segments = []
         for signed_simplex in self.signed_simplices:
@@ -555,9 +581,6 @@ class PersistenceForest:
         L = [ self.get_root( self.nodes[id] ) for id in node_id_list ]
         return L
 
-
-    
-
     # ----- reduce forest (collapses trivial edges which happen at the same filtration value) -------------
 
     def _collapse_parent_child(self, parent: PFNode, child: PFNode):
@@ -760,7 +783,7 @@ class PersistenceForest:
 
     # ----- plotting tools -------
 
-    def plot_at_filtration( 
+    def plot_at_filtration(
         self,
         filt_val: float,
         ax=None,
@@ -771,6 +794,7 @@ class PersistenceForest:
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
         loop_edge_arrows: bool = False,
+        remove_double_edges: bool = False,
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -848,7 +872,7 @@ class PersistenceForest:
 
         # --- Draw edges
         if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=0.8, colors="0.65", zorder=2, label="edges")
+            edge_coll = LineCollection(edges_xy, linewidths=0.8, colors="0.3", zorder=2, label="edges")
             ax.add_collection(edge_coll)
 
         
@@ -860,7 +884,10 @@ class PersistenceForest:
                 cycle = bar.cycle_at_filtration_value(filt_val=filt_val)    
 
                 # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-                segments = cycle.segments(point_cloud=self.point_cloud)
+                if remove_double_edges:
+                    segments = cycle.without_double_edges().segments(point_cloud=self.point_cloud)
+                else:
+                    segments = cycle.segments(point_cloud=self.point_cloud)
 
                 # Thicker colored edges along the loop
                 loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
@@ -879,7 +906,7 @@ class PersistenceForest:
                             continue  # skip degenerate segments
 
                         # Place arrow around the middle of the segment, slightly shortened
-                        frac = 0.4  # fraction of the segment length used for the arrow body
+                        frac = 0.5  # fraction of the segment length used for the arrow body
                         mx = 0.5 * (x0 + x1)
                         my = 0.5 * (y0 + y1)
 
@@ -898,9 +925,10 @@ class PersistenceForest:
                             xy=(x_end, y_end),
                             xytext=(x_start, y_start),
                             arrowprops=dict(
-                                arrowstyle="->",
+                                arrowstyle="-|>",
                                 linewidth=1.6,
                                 color=color_map[bar],
+                                mutation_scale=10
                             ),
                             zorder=6,
                     )
@@ -1223,8 +1251,6 @@ class PersistenceForest:
         from forest_plotting import _animate_filtration_generic
         return _animate_filtration_generic(self, *args, **kwargs)
 
-    
-
     #------- generalized landscape ----------------
 
     def compute_generalized_landscape_family(
@@ -1292,9 +1318,6 @@ class PersistenceForest:
     def plot_landscape_family(self, label: str,*args, **kwargs):
         from forest_landscapes import plot_landscape_family
         return plot_landscape_family(self, label,*args,**kwargs)
-
-
-
 
 
 # --------- Animate comparison ------------

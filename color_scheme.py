@@ -255,7 +255,7 @@ def build_scheme_from_bars(
     *,
     seed: Optional[int] = None,
     order_within_set: str = "light_to_dark",
-    prefer_start: Optional[str] = None,  # e.g., "#ff7f0e" to bias first base toward orange
+    prefer_start: Optional[str] = "#ff7f0e",  # e.g., "#ff7f0e" to bias first base toward orange
     num_hues: int = 360,
     sats: Sequence[float] = (0.65, 0.85, 1.00),
     vals: Sequence[float] = (0.80, 0.95),
