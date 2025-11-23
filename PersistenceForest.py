@@ -255,7 +255,7 @@ class PersistenceForest:
         self.point_cloud = np.array(point_cloud) #point cloud is list of n-dim arrays
 
         #check if point cloud has correct shape
-        self.dim = self.point_cloud.ndim
+        self.dim = self.point_cloud.shape[1]
         if print_info:
             print(f'dimension = {self.dim}')
 
@@ -472,6 +472,8 @@ class PersistenceForest:
                     self.update_node(node=L[0], updated_cycle=updated_cycle, filt_val=filt_val)
 
                 else:
+                    print(L)
+                    print(simplex)
                     raise ValueError("Error, L is of the wrong form")
 
         loop_forest_time = time.perf_counter() - loop_forest_start
