@@ -295,6 +295,7 @@ def build_scheme_from_bars(
 def color_map_for_bars(
     bars: Iterable,
     seed: Optional[int]=None,
+    prefer_start: Optional[str] = "#ff7f0e",
     *,
     by_id: bool = False,
 ) -> Dict[object, str]:
@@ -305,6 +306,7 @@ def color_map_for_bars(
     scheme = build_scheme_from_bars(
         bars,
         seed=seed,
+        prefer_start=prefer_start
     )
 
     # Recreate groups to align colors with the same within-set order

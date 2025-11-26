@@ -887,7 +887,7 @@ class PersistenceForest:
 
     # ------ generate color scheme  ---------
 
-    def _build_color_map_forest(self, seed: Optional[int] = 39):
+    def _build_color_map_forest(self, seed: Optional[int] = 39, start_color: Optional[str] = "#ff7f0e",):
         """
         Computes a color map which assign a color to each bar in the barcode. 
         Bars in same tree will have similiar colors. 
@@ -904,6 +904,7 @@ class PersistenceForest:
             ordered_bars,
             seed =seed,
             by_id=False,
+            prefer_start=start_color
         )
 
         return
