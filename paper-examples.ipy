@@ -10,10 +10,9 @@ plt.rcParams.update({
     "font.size": 6,
 })
 
-
+# %%
 %load_ext autoreload
 %autoreload 3
-# %%
 !mkdir -p paper_figures
 
 #%% Example 1: distinguish shapes by their landscapes\
@@ -66,13 +65,18 @@ for name, forest in [("circle", circle_forest), ("ellipse", ellipse_forest), ("c
 double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
-fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (10,5))
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (5,2.5))
 double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, loop_edge_arrows=True, title="Signed Cycle",show=False)
 double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, loop_edge_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
-fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=True, bbox_inches='tight')
+axes[0].axis('off')
+axes[1].axis('off')
+axes[0].set_title(None)
+axes[1].set_title(None)
+fig.tight_layout(pad=0.1)
+fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=True)
 plt.show()
 
-# %%
+# %% Example: Dual filtration
 rng = np.random.default_rng(35)
 num_points=300
 points = rng.uniform(low=0.0, high=2*np.pi, size=num_points)
@@ -86,5 +90,5 @@ for k in range(0,N):
     loop_forest.plot_at_filtration_with_dual(.25+.25*k, ax=axs[k])
     axs[k].set_title(None)
 fig.tight_layout(pad=0.1)
-fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300, )
+fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300)
 # %%
