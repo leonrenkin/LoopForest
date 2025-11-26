@@ -33,6 +33,92 @@ def sample_noisy_star(n, spikes=5, amplitude=0.5, noise_std=0.01, seed=None, rad
     
     return np.column_stack((x_noisy, y_noisy))
 
+
+def sample_noisy_star_pointy(
+    n,
+    seed=0,
+    spikes=5,
+    r_outer=1.0,
+    r_inner=0.4,
+    noise_std=0.02
+):
+    """
+    Sample noisy points along a pointy star boundary.
+
+    Parameters
+    ----------
+    n_points : int
+        Number of points to sample.
+    seed : int
+        Random seed for reproducibility.
+    n_arms : int
+        Number of arms/spikes of the star.
+    r_outer : float
+        Radius of the outer tips.
+    r_inner : float
+        Radius of the inner recesses.
+    noise_std : float
+        Standard deviation of Gaussian noise added to points.
+
+    Returns
+    -------
+    points : ndarray, shape (n_points, 2)
+        2D array of sampled star points.
+    """
+
+    rng = np.random.default_rng(seed)
+
+    # Angles for outer and inner points
+    angles_outer = np.linspace(0, 2*np.pi, spikes, endpoint=False)
+    angles_inner = angles_outer + np.pi / spikes
+
+    # Boundary vertices alternating outer and inner points
+    angles = np.empty(spikes * 2)
+    radii = np.empty(spikes * 2)
+
+    angles[0::2] = angles_outer
+    angles[1::2] = angles_inner
+
+    radii[0::2] = r_outer
+    radii[1::2] = r_inner
+
+    # Convert to x,y coordinates for the star vertices
+    vertices = np.column_stack([radii * np.cos(angles),
+                                radii * np.sin(angles)])
+
+    # Compute the lengths of each edge segment for uniform boundary sampling
+    diffs = np.diff(np.vstack([vertices, vertices[0]]), axis=0)
+    seg_lengths = np.sqrt((diffs**2).sum(axis=1))
+    cum_lengths = np.cumsum(seg_lengths)
+    total_length = cum_lengths[-1]
+
+    # Sample distances along the boundary
+    s = rng.uniform(0, total_length, size=n)
+
+    points = np.zeros((n, 2))
+
+    # For each sampled distance, find its segment
+    for i, dist in enumerate(s):
+        seg_idx = np.searchsorted(cum_lengths, dist)
+        if seg_idx == 0:
+            prev_length = 0
+        else:
+            prev_length = cum_lengths[seg_idx - 1]
+
+        t = (dist - prev_length) / seg_lengths[seg_idx]
+
+        v0 = vertices[seg_idx]
+        v1 = vertices[(seg_idx + 1) % len(vertices)]
+
+        # Linear interpolation
+        points[i] = (1 - t) * v0 + t * v1
+
+    # Add Gaussian noise
+    noise = rng.normal(scale=noise_std, size=points.shape)
+    points += noise
+
+    return points
+
 def sample_noisy_circle(n, noise_std=0.05, seed=42, radius: float = 1):
     """
     Sample n random points on a circle with diameter 1,
