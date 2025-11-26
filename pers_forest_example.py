@@ -20,15 +20,14 @@ plt.axis('equal')
 pers_forest = PersistenceForest(points, print_info=True)
 
 # %%
-
 pers_forest.plot_barcode(min_bar_length=0.01)
 
 # %%
 pers_forest.plot_at_filtration(0.2)
-pers_forest.plot_at_filtration(0.3)
-pers_forest.plot_at_filtration(0.4)
+pers_forest.plot_at_filtration(0.6)
+pers_forest.plot_at_filtration(0.7)
 # %%
-from cycle_rep_vectorisations import signed_chain_edge_length
+from cycle_rep_vectorisations import signed_chain_edge_length, constant_one_functional
 
 pers_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_edge_length,
@@ -38,7 +37,79 @@ pers_forest.compute_generalized_landscape_family(
     label="length",
 )
 
-pers_forest.plot_landscape_family(label="length")
+pers_forest.compute_generalized_landscape_family(
+    cycle_func=constant_one_functional,
+    max_k=6,
+    num_grid_points=1000,
+    min_bar_length=0.01,   # ignore very short bars
+    label="1",
+)
+
+pers_forest.plot_landscape_family(label='length', title = "Regular Persistence Landscapes")
+pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landscapes")
+
+
+# %%
+from cycle_rep_vectorisations import signed_chain_excess_connected_components, signed_chain_area, signed_chain_connected_components, signed_chain_connected_components, signed_chain_excess_connected_components
+
+double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
+double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
+
+double_edge_forest.compute_generalized_landscape_family(
+    cycle_func=signed_chain_connected_components,
+    max_k=6,
+    num_grid_points=1000,
+    label="components",
+)
+
+double_edge_forest.compute_generalized_landscape_family(
+    cycle_func=signed_chain_excess_connected_components,
+    max_k=6,
+    num_grid_points=1000,
+    label="excess components",)
+
+double_edge_forest.compute_generalized_landscape_family(
+    cycle_func=signed_chain_connected_components,
+    max_k=6,
+    num_grid_points=1000,
+    label="unsigned components",
+    signed=False)    
+
+double_edge_forest.compute_generalized_landscape_family(
+    cycle_func=signed_chain_excess_connected_components,
+    max_k=6,
+    num_grid_points=1000,
+    label="unsigned excess components",
+    signed=False)   
+
+double_edge_forest.plot_landscape_family(label="components")
+double_edge_forest.plot_landscape_family(label="unsigned components")
+
+double_edge_forest.plot_landscape_family(label="excess components")
+double_edge_forest.plot_landscape_family(label="unsigned excess components")
+
+# %%
+from cycle_rep_vectorisations import signed_chain_excess_curvature
+double_edge_forest.compute_generalized_landscape_family(
+    cycle_func=signed_chain_excess_curvature,
+    max_k=6,
+    num_grid_points=1000,
+    signed=True,
+    label="signed excess curvature")
+
+double_edge_forest.compute_generalized_landscape_family(
+    cycle_func=signed_chain_excess_curvature,
+    max_k=6,
+    num_grid_points=1000,
+    signed=False,
+    label="unsigned excess curvature")
+
+fig, ax = plt.subplots()
+double_edge_forest.plot_landscape_family(label = "signed excess curvature", ax = ax)
+double_edge_forest.plot_landscape_family(label = "unsigned excess curvature", ax = ax)
+plt.show()
+
+
 
 # %%
 from forest_landscapes import MultiLandscapeVectorizer
