@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from LoopForest import LoopForest
 from PersistenceForest import PersistenceForest
+import seaborn as sns
 
 plt.rcParams.update({
     "text.usetex": False,
@@ -17,15 +18,19 @@ plt.rcParams.update({
 
 #%% Example 1: distinguish shapes by their landscapes\
 
-from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril
+from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril, sample_noisy_star_pointy
 from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
 
-circle = sample_noisy_circle(1000, noise_std=0.01, seed=4, radius = 0.36)
-star = sample_noisy_star(1000, spikes=5, amplitude=0.5, noise_std=0.03, seed=42, radius =0.75)
-ellipse = sample_noisy_ellipse(1000, a=0.9,b=0.4, noise_std = 0.03)
-circle_line = sample_noisy_circle_with_tendril(1000, radius=0.5, tendril_length=0.3, tendril_fraction=0.05, noise_std=0.02, tendril_width_deg=2)
+n_points = 1000
+
+circle = sample_noisy_circle(n_points, noise_std=0.02, seed=4, radius = 0.36)
+star = sample_noisy_star(n_points, spikes=5, amplitude=0.4,radius=0.62, noise_std=0.02)
+star_pointy = sample_noisy_star_pointy(n_points, spikes=7, r_inner=0.4, r_outer=1, noise_std=0.02, seed=42)
+ellipse = sample_noisy_ellipse(n_points, a=0.9,b=0.4, noise_std = 0.02)
+circle_line = sample_noisy_circle_with_tendril(n_points, radius=0.5, tendril_length=0.3, tendril_fraction=0.05, noise_std=0.02, tendril_width_deg=2, seed=1)
 circle_forest = LoopForest(circle)
 star_forest = LoopForest(star)
+pointy_star_forest = LoopForest(star_pointy)
 ellipse_forest = LoopForest(ellipse)
 circle_line_forest = LoopForest(circle_line)
 
@@ -48,7 +53,7 @@ yrange_dict = {
 
 column_titles = ["Vol", "EVol", "$K$"]
 
-for name, forest in [("circle", circle_forest), ("ellipse", ellipse_forest), ("circle_line", circle_line_forest), ("star", star_forest)]:
+for name, forest in [("circle", circle_forest), ("ellipse", ellipse_forest), ("circle_line", circle_line_forest), ("star", star_forest), ("pointy_star",pointy_star_forest)]:
     fig, axes = forest.plot_landscape_subplots(polyhedral_path_funcs=[polygon_length, polygon_area, curvature_excess], 
                                        yrange_dict=yrange_dict, 
                                        column_titles=column_titles,
@@ -91,4 +96,25 @@ for k in range(0,N):
     axs[k].set_title(None)
 fig.tight_layout(pad=0.1)
 fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300)
+# %%
+color_palette = sns.color_palette("tab10")
+
+fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(10, 5), gridspec_kw={"height_ratios": [1.0, 1]})
+for i in range(4):
+    name, forest = [("circle", circle_forest), ("ellipse", ellipse_forest), ("circle_line", circle_line_forest), ("star", star_forest)][i]
+    point_cloud = forest.point_cloud
+
+    #point cloud
+    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=1, color= color_palette[i])
+    axes[0,i].set_aspect('equal')
+    axes[0,i].set_box_aspect(1)
+    axes[0,i].set_title(name)
+
+    axes[1,i].set_box_aspect(1)
+    forest.plot_barcode(ax=axes[1,i],max_bars=10, sort="death", title=f"{name} barcode")
+    axes[1,i].set_xlim((0,0.7))
+
+
+plt.show()
+
 # %%
