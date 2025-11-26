@@ -506,7 +506,6 @@ def _animate_filtration_generic(
         # Reasonable defaults (only used if not explicitly overridden)
         plot_kwargs = {
             "fill_triangles": True,
-            "loop_vertex_markers": False,
             "point_size": 3,
             "coloring": coloring,
             "show": False,   # important: we manage the figure ourselves
@@ -851,3 +850,5 @@ def animate_filtration_pair(
             anim.save(fname, dpi=dpi, fps=fps)
 
     return anim, fig
+
+
