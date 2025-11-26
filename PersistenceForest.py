@@ -125,6 +125,143 @@ class SignedChain:
             else:
                 segments.append(np.array(point_cloud[list(reversed(signed_simplex[0]))]))
         return segments
+    
+    def dim(self):
+        for signed_simplex in self.signed_simplices:
+            return len(signed_simplex[0])-1
+
+    def polyhedral_paths(self, point_cloud: NDArray) -> List[NDArray[np.int32]]:
+        """
+        Decompose a 1-dimensional SignedChain (collection of oriented edges in R^2)
+        into polyhedral paths, choosing at each branching point the leftmost
+        outgoing edge (smallest counterclockwise angle).
+
+        Parameters
+        ----------
+        point_cloud : ndarray, shape (n_points, dim>=2)
+            Ambient point cloud. Vertex indices in the simplices refer into this
+            array. Only the first two coordinates (x,y) are used.
+
+        Returns
+        -------
+        paths : list of 1D int ndarrays
+            Each array `v = paths[k]` is a cyclic list of vertex indices,
+            analogous to `Loop.vertex_list` in LoopForest:
+                edges are (v[i], v[i+1]) and the final edge (v[-1], v[0]).
+            The first vertex is repeated at the end if the greedy walk closes
+            up naturally.
+        """
+        if not self.signed_simplices:
+            return []
+
+        if self.dim() !=1:
+            raise ValueError(f"Polyhedral path methods only works for Signed 1-chains. Dimemsion of chain: {self.dim}")
+
+        from collections import defaultdict
+
+        def _start_end(simplex: Tuple[int, ...], orientation: int) -> Tuple[int, int]:
+            """Return (start, end) vertex of an oriented 1-simplex."""
+            if len(simplex) != 2:
+                raise ValueError(
+                    "polyhedral_paths is only implemented for 1-chains (edges)."
+                )
+            a, b = simplex
+            if orientation == 1:
+                return a, b
+            elif orientation == -1:
+                return b, a
+            else:
+                raise ValueError("Orientation must be ±1.")
+
+        def _angle_ccw(prev_vec: np.ndarray, next_vec: np.ndarray) -> float:
+            """
+            Signed angle from prev_vec to next_vec in [0, 2π),
+            measured counterclockwise.
+            """
+            # Work in 2D; take first two coordinates
+            pv = prev_vec[:2]
+            nv = next_vec[:2]
+
+            # Skip zero-length directions at caller level
+            cross = pv[0] * nv[1] - pv[1] * nv[0]
+            dot   = pv[0] * nv[0] + pv[1] * nv[1]
+            angle = math.atan2(cross, dot)  # ∈ (-π, π]
+            if angle < 0.0:
+                angle += 2.0 * math.pi
+            return angle
+
+        # Precompute adjacency: start vertex -> list of (signed_simplex, end_vertex)
+        edges_by_start: Dict[int, List[Tuple[tuple, int]]] = defaultdict(list)
+        for signed_simplex in self.signed_simplices:
+            simplex, orientation = signed_simplex
+            start, end = _start_end(simplex, orientation)
+            edges_by_start[start].append((signed_simplex, end))
+
+        visited: Set[tuple] = set()
+        paths: List[NDArray[np.int32]] = []
+
+        for signed_simplex in self.signed_simplices:
+            if signed_simplex in visited:
+                continue
+
+            simplex, orientation = signed_simplex
+            start, end = _start_end(simplex, orientation)
+
+            # Start a new path with this edge
+            path_vertices: List[int] = [int(start), int(end)]
+            visited.add(signed_simplex)
+
+            prev_vertex = start
+            cur_vertex = end
+
+            p_prev = np.asarray(point_cloud[prev_vertex], dtype=float)[:2]
+            p_cur  = np.asarray(point_cloud[cur_vertex],  dtype=float)[:2]
+            prev_vec = p_cur - p_prev
+
+            while True:
+                candidates = edges_by_start.get(cur_vertex, [])
+                if not candidates:
+                    # No outgoing edges from this vertex
+                    break
+
+                best_edge: Optional[tuple] = None
+                best_next_vertex: Optional[int] = None
+                best_angle: Optional[float] = None
+
+                for edge_key, next_vertex in candidates:
+                    p_next = np.asarray(point_cloud[next_vertex], dtype=float)[:2]
+                    next_vec = p_next - p_cur
+
+                    # Ignore degenerate directions
+                    if np.allclose(next_vec, 0.0):
+                        continue
+
+                    angle = _angle_ccw(prev_vec, next_vec)
+
+                    if best_angle is None or angle < best_angle:
+                        best_angle = angle
+                        best_edge = edge_key
+                        best_next_vertex = int(next_vertex)
+
+                if best_edge is None or best_next_vertex is None:
+                    # Only degenerate candidates
+                    break
+
+                # Stop if we would traverse an already covered signed simplex
+                if best_edge in visited:
+                    break
+
+                # Advance along the chosen leftmost edge
+                path_vertices.append(best_next_vertex)
+                visited.add(best_edge)
+
+                prev_vertex, cur_vertex = cur_vertex, best_next_vertex
+                p_prev, p_cur = p_cur, np.asarray(point_cloud[cur_vertex], dtype=float)[:2]
+                prev_vec = p_cur - p_prev
+
+            paths.append(np.array(path_vertices, dtype=np.int32))
+
+        return paths
 
 
 
@@ -1265,11 +1402,10 @@ class PersistenceForest:
         label: Optional[str] = None,
         min_bar_length: float = 0.0,
         x_grid: Optional[NDArray[np.float64]] = None,
-        cache: bool = True
+        cache: bool = True,
+        signed: bool = True,
     ):
         """
-        #v2
-
         Compute a generalized landscape family for this PersistenceForest.
 
         Parameters
@@ -1294,14 +1430,24 @@ class PersistenceForest:
             Ignore bars with lifespan < min_bar_length.
         x_grid : np.ndarray | None, optional
             Optional common grid to evaluate all landscapes on.
+        signed: bool
+            If set to False, Deletes simplices apearing in both directions, corresponds to generalized landscapes with unsigned simplices
 
         Returns
         -------
         GeneralizedLandscapeFamily
         """
-        def _cycle_value(chain, point_cloud):
-            # `chain` is a SignedChain
-            return float(cycle_func(chain.signed_simplices, point_cloud))
+
+        if signed:
+            def _cycle_value(chain, point_cloud):
+                # `chain` is a SignedChain
+                return float(cycle_func(chain, point_cloud))
+        else:
+            def _cycle_value(chain, point_cloud):
+                # `chain` is a SignedChain
+                return float(cycle_func(chain.without_double_edges(), point_cloud))
+    
+            
 
         from forest_landscapes import compute_generalized_landscape_family
 
