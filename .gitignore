@@ -1,3 +1,13 @@
 paper_figures/
 .ipynb_checkpoints/
 __pycache__/
+benchmarks/
+animations/
+generalized_landscape_plots/
+plots/
+Sergio_Datasets/
+point_cloud_csvs/
+minimal_delauney_cycles_old.ipynb
+Sergio_Cycle_rep.ipynb
+.DS_Store
+Cycle_rep_organoid_analysis.ipynb
