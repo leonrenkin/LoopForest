@@ -125,7 +125,7 @@ def curvature_excess(points: Iterable[Tuple[float, float]]) -> float:
     K = total_curvature(points, enforce_ccw=True)
     return K *(1.0/ (2*math.pi) )- 1.0
 
-def signed_chain_edge_length(signed_simplices, point_cloud: NDArray[np.float64]) -> float:
+def signed_chain_edge_length(signed_chain, point_cloud: NDArray[np.float64]) -> float:
     """
     CycleValueFunc for signed chains: total edge length.
 
@@ -153,7 +153,7 @@ def signed_chain_edge_length(signed_simplices, point_cloud: NDArray[np.float64])
     """
     total = 0.0
 
-    for simplex, sign in signed_simplices:
+    for simplex, sign in signed_chain.signed_simplices:
         # Make sure we have exactly two vertices: an edge
         verts_idx = list(simplex)
         if len(verts_idx) != 2:
@@ -165,5 +165,41 @@ def signed_chain_edge_length(signed_simplices, point_cloud: NDArray[np.float64])
 
         # Use abs(sign) so orientation doesn't cancel length
         total += length
+
+    return total
+
+def constant_one_functional(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    return 1
+
+def signed_chain_connected_components(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    return len( signed_chain.polyhedral_paths(point_cloud) )
+
+def signed_chain_excess_connected_components(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    return len( signed_chain.polyhedral_paths(point_cloud) ) - 1
+
+def signed_chain_area(signed_chain, point_cloud:  NDArray[np.float64]) -> float:
+    """
+    Compute Area by taking area of outer circle minus area of inner circles
+    """
+
+    paths = list( signed_chain.polyhedral_paths(point_cloud) )
+    x_max_list = np.array([point_cloud[path, 0].max() for path in paths])
+    index_max = np.argmax(x_max_list)
+
+    total_area = 0
+
+    for index, path in enumerate(paths):
+        if index == index_max:
+            total_area += polygon_area(point_cloud[path])
+        else:
+            total_area -= polygon_area(point_cloud[path])
+    return total_area
+
+def signed_chain_excess_curvature(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """Sums excess curvature of polyhedral paths"""
+    paths = list( signed_chain.polyhedral_paths(point_cloud) )
+    total = 0
+    for path in paths:
+        total += curvature_excess(point_cloud[path])
 
     return total
