@@ -73,3 +73,18 @@ fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=Tr
 plt.show()
 
 # %%
+rng = np.random.default_rng(35)
+num_points=300
+points = rng.uniform(low=0.0, high=2*np.pi, size=num_points)
+points = np.sqrt(np.abs(np.cos(1.5*points))+.1)[:,None] * np.column_stack((np.cos(points), np.sin(points))) + rng.normal(scale=0.05, size=(num_points,2))
+loop_forest = LoopForest(points, print_info=True)
+alpha_max = max(v for (_,v) in loop_forest.filtration)
+N = 4
+fig, axs = plt.subplots(1, N, sharey=True, figsize=(N*3,3))
+for k in range(0,N):
+    axs[k].axis('off')
+    loop_forest.plot_at_filtration_with_dual(.25+.25*k, ax=axs[k])
+    axs[k].set_title(None)
+fig.tight_layout(pad=0.1)
+fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300, )
+# %%

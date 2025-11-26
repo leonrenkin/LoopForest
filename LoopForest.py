@@ -1531,7 +1531,7 @@ class LoopForest:
         figsize: tuple[float, float] = (7, 7),
         point_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
-        dual_vertex_size: float = 26,
+        dual_vertex_size: float = 16,
     ):
         if coloring == "forest":
             if not hasattr(self, "color_map_forest"):
@@ -1648,7 +1648,7 @@ class LoopForest:
             ax.scatter(
                 present_arr[:, 0],
                 present_arr[:, 1],
-                s=dual_vertex_size * 0.75,
+                s=dual_vertex_size,
                 c="C3",
                 marker="o",
                 edgecolors="none",
