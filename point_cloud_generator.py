@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def generate_point_cloud_2d(min=0,max=1,save_to_csv=False, filename="point_cloud.csv"):
+def generate_point_cloud_2d(min=0,max=1,save_to_csv=False, filename="point_cloud.csv",timeout = 60):
     """
     interactive way to generate 2d pointcloud in [-1,1] x [-1,1] by simply clicking to add points
     returns array of 2dim tuples
@@ -17,10 +17,11 @@ def generate_point_cloud_2d(min=0,max=1,save_to_csv=False, filename="point_cloud
     ax.set_title("Click to add points. Close the window when done.")
     ax.set_xlim(min, max)  # Set X-axis limits
     ax.set_ylim(min, max)  # Set Y-axis limits
+    ax.set_aspect("equal")
 
     # Use ginput to collect points
     print("Click on the plot to add points. Close the plot window when done.")
-    point_cloud = plt.ginput(n=-1, timeout=60)  # n=-1 allows unlimited clicks; timeout=0 waits indefinitely
+    point_cloud = plt.ginput(n=-1, timeout=timeout)  # n=-1 allows unlimited clicks; timeout=0 waits indefinitely
     plt.show()
     plt.close()
     # Save to CSV if the option is enabled
@@ -40,4 +41,4 @@ filename="tmp.csv"
 #manually generate point cloud
 axis_min=0
 axis_max=1
-point_cloud_1=generate_point_cloud_2d(axis_min,axis_max,save_to_csv=True, filename=filename)
+point_cloud_1=generate_point_cloud_2d(axis_min,axis_max,save_to_csv=True, filename=filename,timeout=90)
