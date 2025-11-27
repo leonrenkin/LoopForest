@@ -111,24 +111,37 @@ for object in forests:
         label="Unsigned Excess Components",
         signed=False)   
     
-    object.plot_landscape_comparison_between_functionals(labels=labels)
 
 color_palette = sns.color_palette("tab10")
-fix, axes = plt.subplots(ncols=2,nrows=2, figsize = (8,6))
+fig, axes = plt.subplots(ncols=3,nrows=2,figsize = (10,6))
 for i, forest in enumerate(forests):
-    axes[0,i].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=3, color= color_palette[i])
-    axes[0,i].set_aspect('equal')
-    axes[0,i].set_box_aspect(1)
-    axes[0,i].set_title(forest_labels[i])
+    axes[i,0].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=3, color= color_palette[i])
+    axes[i,0].set_aspect('equal')
+    axes[i,0].set_box_aspect(1)
+    axes[i,0].set_title(forest_labels[i])
+
+for i, forest in enumerate(forests):
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,1], signed=False, title = "Unsigned Excess Components", label = forest_labels[i], show_baseline = False, x_range = [5,40])
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[1,1], signed=True, title = "Signed Excess Components", label = forest_labels[i], show_baseline = False, x_range = [5,40])
+    
+    axes[i,1].set_box_aspect(1)
+    axes[i,1].set_ylim([-4/25,4])
+
+axes[0,1].legend()
+axes[1,1].legend()
 
 for j, label in enumerate(labels):
     if label == "Unsigned Excess Components":
-        title = "Excess components landscape for unsigned Chains"
+        title = fr"Unsigned Excess Components Landscape $\lambda_1$"
     else:
-        title = "Excess components landscape for signed Chains"
-    plot_landscape_comparison(forests=forests, forest_labels=forest_labels,label=label, ax=axes[1,j],title="Excess ")
-    axes[1,j].set_xlim([5,40])
-    axes[1,j].set_ylim([-1,25])
+        title = fr"Signed Excess Components Landscape $\lambda_1$"
+    plot_landscape_comparison(forests=forests, forest_labels=forest_labels,label=label, ax=axes[j,2],title=title)
+    axes[j,2].set_xlim([5,40])
+    axes[j,2].set_ylim([-1,25])
+    axes[j,2].set_box_aspect(1)
+    axes[j,2].set_xlabel(None)
+    axes[j,2].set_ylabel(None)
+
 
 fig.savefig('paper_figures/signed_chains_for_conconnected_components.pdf', transparent=True, dpi=300)
 
@@ -173,7 +186,9 @@ for i in range(4):
     forest.plot_barcode(ax=axes[1,i],max_bars=25, sort="death", title=f"Barcode of {name} ", coloring="none")
     axes[1,i].set_xlim((0,0.7))
 
-
+fig.savefig('paper_figures/point_clouds_with_barcodes.pdf', transparent=True, dpi=300)
 plt.show()
 
 # %%
+
+

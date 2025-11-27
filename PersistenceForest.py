@@ -261,8 +261,6 @@ class SignedChain:
 
             paths.append(np.array(path_vertices, dtype=np.int32))
 
-        print(len(paths))
-
         return paths
 
 
@@ -1394,6 +1392,20 @@ class PersistenceForest:
         return _animate_filtration_generic(self, *args, **kwargs)
 
     #------- generalized landscape ----------------
+
+    def plot_barcode_measurement(self, cycle_func, signed = True, bar = None, show =False, *args,**kwargs):
+        from forest_landscapes import plot_barcode_measurement_generic
+
+        if signed:
+            def _cycle_value(chain, point_cloud):
+                # `chain` is a SignedChain
+                return float(cycle_func(chain, point_cloud))
+        else:
+            def _cycle_value(chain, point_cloud):
+                # `chain` is a SignedChain
+                return float(cycle_func(chain.without_double_edges(), point_cloud))
+            
+        return plot_barcode_measurement_generic(forest=self, cycle_func=_cycle_value, bar=bar, show = show,*args,**kwargs)
 
     def compute_generalized_landscape_family(
         self,

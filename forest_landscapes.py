@@ -56,6 +56,91 @@ class StepFunctionData:
     domain: Tuple[float, float]
     metadata: Dict[str, object] = field(default_factory=dict)
 
+    def plot(
+        self,
+        ax: Optional[matplotlib.axes.Axes] = None,
+        *,
+        x_range: Optional[Tuple[float, float]] = None,
+        y_range: Optional[Tuple[float, float]] = None,
+        show_baseline: bool = False,
+        title: Optional[str] = None,
+        baseline_kwargs: Optional[Dict[str, Any]] = None,
+        **line_kwargs: Any,
+    ) -> matplotlib.axes.Axes:
+        """
+        Plot the step function represented by this object.
+        """
+        if ax is None:
+            _, ax = plt.subplots()
+
+        starts = np.asarray(self.starts, dtype=float).ravel()
+        ends = np.asarray(self.ends, dtype=float).ravel()
+        vals = np.asarray(self.vals, dtype=float).ravel()
+
+        if not (starts.size == ends.size == vals.size):
+            raise ValueError("starts, ends and vals must have the same length.")
+
+        # Determine plotting domain
+        if x_range is not None:
+            xmin, xmax = x_range
+        else:
+            xmin, xmax = self.domain
+
+        if xmax <= xmin:
+            raise ValueError("x_range / domain must satisfy xmin < xmax.")
+
+        # Build breakpoints inside [xmin, xmax]
+        xs_candidates = [xmin, xmax]
+        xs_candidates.extend(starts.tolist())
+        xs_candidates.extend(ends.tolist())
+        xs_unique = sorted({x for x in xs_candidates if xmin <= x <= xmax})
+
+        if len(xs_unique) < 2:
+            xs_unique = [xmin, xmax]
+
+        def _value_at(t: float) -> float:
+            """Evaluate the step function at a single point t."""
+            mask = (starts <= t) & (t <= ends)
+            if not np.any(mask):
+                return float(self.baseline)
+            idx = np.nonzero(mask)[0]
+            if idx.size > 1:
+                # If intervals overlap, fall back to summing their values.
+                return float(vals[idx].sum())
+            return float(vals[idx[0]])
+
+        xs_plot: list[float] = []
+        ys_plot: list[float] = []
+
+        for left, right in zip(xs_unique[:-1], xs_unique[1:]):
+            mid = 0.5 * (left + right)
+            y = _value_at(mid)
+            xs_plot.extend([left, right])
+            ys_plot.extend([y, y])
+
+        # Defaults that can be overridden by **line_kwargs
+        ax.plot(xs_plot, ys_plot, **line_kwargs)
+
+        if show_baseline:
+            bl_kwargs = {
+                "linewidth": 1.0,
+                "linestyle": "--",
+            }
+            if baseline_kwargs is not None:
+                bl_kwargs.update(baseline_kwargs)
+            ax.hlines(self.baseline, xmin, xmax, **bl_kwargs)
+
+        ax.grid(True, alpha=0.3)
+
+        ax.set_xlim(xmin, xmax)
+        if y_range is not None:
+            ax.set_ylim(*y_range)
+
+        if title is not None:
+            ax.set_title(title)
+
+        return ax
+
 @dataclass
 class PiecewiseLinearFunction:
     """
@@ -465,6 +550,74 @@ def _build_step_function_data(
                 "root_id": getattr(bar, "root_id", None),
             },
         )
+
+def plot_barcode_measurement_generic(
+        forest,
+        cycle_func: CycleValueFunc,
+        bar=None,
+        *,
+        ax: Optional["matplotlib.axes.Axes"] = None,
+        x_range: Optional[Tuple[float, float]] = None,
+        y_range: Optional[Tuple[float, float]] = None,
+        title: Optional[str] = None,
+        label: Optional[str] = None,
+        show_baseline: bool = True,
+        show = False,
+        **kwargs,
+    ) -> Tuple["matplotlib.axes.Axes", StepFunctionData]:
+    """
+    Plot the 'barcode measurement' for a single bar using the generalized
+    convolution machinery and the PiecewiseLinearFunction class.
+
+    Parameters
+    ----------
+    forest :
+        Any forest-like object with a `barcode` attribute and bars that have
+        `.birth`, `.death`, and `.cycle_reps`.
+    cycle_func : CycleValueFunc
+        Callable (cycle_rep, point_cloud) -> float, used to assign a scalar
+        value to each cycle representative of the bar.
+    bar :
+        Bar object from `forest.barcode`. If None, `forest.max_bar()` is used.
+    ax : matplotlib.axes.Axes, optional
+        Axis to draw on. If None, a new figure and axis are created.
+    x_range : (float, float), optional
+        If given, set the x-limits to this range.
+    y_range : (float, float), optional
+        If given, set the y-limits to this range.
+    title : str, optional
+        Title for the axes. If None, a default title is constructed.
+    label : str, optional
+        Label for the curve (used in legend). If None, no legend is added.
+    show_zero_tails : bool, default True
+        If True, draw dashed horizontal tails at 0 outside the support of the
+        kernel, similar to the old `plot_convolution` helper.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The axis with the plot.
+    kernel : PiecewiseLinearFunction
+        The piecewise-linear function induced by cycle_func.
+    """
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    if bar is None:
+        bar = forest.max_bar()
+
+    step_func = _build_step_function_data(forest=forest, bar=bar,cycle_func=cycle_func)
+
+    step_func.plot(x_range=x_range, y_range=y_range, ax= ax, title = title,show_baseline=show_baseline,label = label, **kwargs)
+
+    if title is None:
+        ax.set_title(f"{label} progression in max bar")
+
+    if show:
+        plt.show()
+
+    return (ax, step_func)
 
 def _build_convolution_with_indicator(
             starts: List[float],
