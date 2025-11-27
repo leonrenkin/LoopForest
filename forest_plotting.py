@@ -45,7 +45,7 @@ def _plot_barcode_generic(
         sort: str | None = "birth",   # "length" | "birth" | "death" | None
         title: str = "Barcode",
         xlabel: str = "filtration value",
-        coloring: Literal["forest", "bars"] = "forest",
+        coloring: Literal["forest", "bars","none"] = "forest",
         max_bars: int = 0,
         min_bar_length: float = 0.0,
     ):
@@ -70,6 +70,7 @@ def _plot_barcode_generic(
         Which color scheme to use:
         - "forest": use forest.color_map_forest (tree-structured colors).
         - "bars":   use forest.color_map_bars (ignores tree structure).
+        - "none":   all bars in same color
         If the chosen color map does not exist yet, it is built as in
         `plot_at_filtration`.
     max_bars : int
@@ -99,9 +100,10 @@ def _plot_barcode_generic(
         if not hasattr(forest, "color_map_bars"):
             forest._build_color_map_bars()
         color_map = forest.color_map_bars
-    else:
-        # Fallback: no special coloring
+    elif coloring =="none":
         color_map = {}
+    else:
+        raise ValueError("Invalid Coloring input")
 
     # ---- Work on a copy so we don't mutate original order ----
     bars = list(forest.barcode)
@@ -236,7 +238,7 @@ def _plot_dendrogram_generic(
         tree_gap_leaves: int = 1,
         check_reduced: bool = True,
         small_on_top: bool = False,
-        threshold: float = 0.0
+        threshold: float = 0.0,
     ):
     import warnings
 

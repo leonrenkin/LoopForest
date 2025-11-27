@@ -885,6 +885,38 @@ def plot_landscape_family(
 
     return ax
 
+def plot_landscape_comparison_between_functionals(forest,
+    labels: list[str],
+    k: int = 1,
+    ax: Optional["matplotlib.axes.Axes"] = None,
+    title: Optional[str] = None,
+):
+
+    if not hasattr(forest, "landscape_families"):
+        raise AttributeError(f"No landscape_families attribute on {forest}")
+
+
+    families = [forest.landscape_families[label] for label in labels]
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    for fam, label in zip(families, labels):
+        if k not in fam.landscapes:
+            continue
+        plf = fam.landscapes[k]
+        ax.plot(plf.xs, plf.ys, label=label)
+
+    ax.set_xlabel("filtration value")
+    ax.set_ylabel(fr"$\lambda_{k}$")
+    if title is None:
+        title = fr"Comparison of $\lambda_{k}$"
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    return ax
+
 def plot_landscape_comparison(
     forests: List,
     label: str,
@@ -914,7 +946,7 @@ def plot_landscape_comparison(
     ax.set_xlabel("filtration value")
     ax.set_ylabel(fr"$\lambda_{k}$")
     if title is None:
-        title = fr"Comparison of {label} $\lambda_{k}$ across forests (k={k})"
+        title = fr"Comparison of {label} $\lambda_{k}$"
     ax.set_title(title)
     ax.legend()
     ax.grid(True, alpha=0.3)
