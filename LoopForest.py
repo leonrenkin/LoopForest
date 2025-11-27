@@ -1925,7 +1925,7 @@ class LoopForest:
         sort: str | None = "birth",   # "length" | "birth" | "death" | None
         title: str = "Barcode",
         xlabel: str = "filtration value",
-        coloring: Literal["forest", "bars"] = "forest",
+        coloring: Literal["forest", "bars","none"] = "forest",
         max_bars: int = 0,
         min_bar_length: float = 0.0,
     ):
@@ -1979,9 +1979,10 @@ class LoopForest:
             if not hasattr(self, "color_map_bars"):
                 self._build_color_map_bars()
             color_map = self.color_map_bars
-        else:
-            # Fallback: no special coloring
+        elif coloring =="none":
             color_map = {}
+        else:
+            raise ValueError("Invalid Coloring input")
 
         # ---- Work on a copy so we don't mutate original order ----
         bars = list(self.barcode)
