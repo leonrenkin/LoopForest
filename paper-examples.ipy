@@ -23,18 +23,18 @@ from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_lengt
 
 n_points = 1000
 
-circle = sample_noisy_circle(n_points, noise_std=0.02, seed=4, radius = 0.36)
-star = sample_noisy_star(n_points, spikes=5, amplitude=0.4,radius=0.62, noise_std=0.02)
-star_pointy = sample_noisy_star_pointy(n_points, spikes=7, r_inner=0.4, r_outer=1, noise_std=0.02, seed=42)
-ellipse = sample_noisy_ellipse(n_points, a=0.9,b=0.4, noise_std = 0.02)
-circle_line = sample_noisy_circle_with_tendril(n_points, radius=0.5, tendril_length=0.3, tendril_fraction=0.05, noise_std=0.02, tendril_width_deg=2, seed=1)
-circle_forest = LoopForest(circle)
-star_forest = LoopForest(star)
-pointy_star_forest = LoopForest(star_pointy)
-ellipse_forest = LoopForest(ellipse)
-circle_line_forest = LoopForest(circle_line)
+circle = sample_noisy_circle(n_points, noise_std=0.02, seed=4, radius = 0.38)*10
+star = sample_noisy_star(n_points, spikes=5, amplitude=0.4,radius=0.62, noise_std=0.02)*10
+star_pointy = sample_noisy_star_pointy(n_points, spikes=7, r_inner=0.4, r_outer=1, noise_std=0.02, seed=42)*10
+ellipse = sample_noisy_ellipse(n_points, a=0.9,b=0.37, noise_std = 0.02)*10
+circle_line = sample_noisy_circle_with_tendril(n_points, radius=0.51, tendril_length=0.3, tendril_fraction=0.05, noise_std=0.02, tendril_width_deg=2, seed=1)*10
+circle_forest = PersistenceForest(circle)
+star_forest = PersistenceForest(star)
+pointy_star_forest = PersistenceForest(star_pointy)
+ellipse_forest = PersistenceForest(ellipse)
+circle_line_forest = PersistenceForest(circle_line)
 
-#yrange_dict to make y-axis consistent between plots
+""" #yrange_dict to make y-axis consistent between plots
 xrange_dict = {(0,0): (-1.25,1.25),
                (0,1): (0,1),
                (0,2): (0,1),
@@ -64,7 +64,7 @@ for name, forest in [("circle", circle_forest), ("ellipse", ellipse_forest), ("c
         axes[key].set_ylim(value[0], value[1])
     fig.tight_layout(pad=.0)
     fig.savefig(f"paper_figures/landscape_{name}.pdf", dpi=300, transparent=True, bbox_inches='tight')
-    plt.show(fig)
+    plt.show(fig) """
 
 # %%
 double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
@@ -171,24 +171,74 @@ fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300
 # %%
 color_palette = sns.color_palette("tab10")
 
+name_forest_list = [("Circle", circle_forest), ("Ellipse", ellipse_forest), ("Spoke Circle", circle_line_forest), ("Star", star_forest)]
+
 fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(10, 5), gridspec_kw={"height_ratios": [1, 1]})
-for i in range(4):
-    name, forest = [("Circle", circle_forest), ("Ellipse", ellipse_forest), ("Circle with Line", circle_line_forest), ("Star", star_forest)][i]
+for i, (name,forest) in enumerate(name_forest_list):
     point_cloud = forest.point_cloud
 
     #point cloud
-    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=1, color= color_palette[i+1])
+    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=1, color= color_palette[i])
     axes[0,i].set_aspect('equal')
     axes[0,i].set_box_aspect(1)
     axes[0,i].set_title(name)
 
     axes[1,i].set_box_aspect(1)
-    forest.plot_barcode(ax=axes[1,i],max_bars=25, sort="death", title=f"Barcode of {name} ", coloring="none")
-    axes[1,i].set_xlim((0,0.7))
+    forest.plot_barcode(ax=axes[1,i],max_bars=25, sort="death", title=f"Barcode of {name} ", coloring="grey")
+    axes[1,i].set_xlim((0,7))
 
 fig.savefig('paper_figures/point_clouds_with_barcodes.pdf', transparent=True, dpi=300)
 plt.show()
 
 # %%
+from cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
+fig, axes = plt.subplots(nrows=1,ncols=3, figsize=(10, 2.5))
+
+cycle_funcs_list = [("Length",signed_chain_edge_length),("Area",signed_chain_area), ("Excess Curvature",signed_chain_excess_curvature)]
+
+for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
+    for j,(name, forest) in enumerate(name_forest_list):
+
+        forest.plot_barcode_measurement(cycle_func=cycle_func, ax = axes[i], signed=True, label = name, show_baseline = False, x_range = [0,7],color = color_palette[j])
+
+        
+    axes[i].set_title(func_name)
+    axes[i].legend()
+    axes[i].set_xlim((0,7.2)) 
+    axes[i].set_ylim(bottom=0) 
+
+fig.savefig('paper_figures/point_clouds_measurement_comparisons.pdf', transparent=True, dpi=300)
+plt.show()
+
+# %%
+from forest_landscapes import plot_landscape_comparison
+
+forests = [forest for _, forest in name_forest_list]
+forest_labels = [name for name, _ in name_forest_list]
 
 
+fig, axes = plt.subplots(nrows=1,ncols=3, figsize=(10, 2.5))
+for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
+
+    for forest in forests:
+        forest.compute_generalized_landscape_family(
+            cycle_func=cycle_func,
+            max_k=6,
+            num_grid_points=1000,
+            label=func_name,
+            signed=True) 
+
+    plot_landscape_comparison(forests=forests,label = func_name, ax = axes[i], forest_labels = forest_labels)
+
+        
+    axes[i].set_title(fr"Generalized Landscape $\lambda_1$ of {func_name}")
+    axes[i].legend()
+    axes[i].set_xlim((0,7.2)) 
+    axes[i].set_ylim(bottom=0)
+    axes[i].set_xlabel(None)
+    axes[i].set_ylabel(None) 
+
+
+fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
+plt.show()
+# %%

@@ -90,11 +90,11 @@ def total_curvature(points: Iterable[Tuple[float, float]],
     """
     P = _to_xy(points)
 
-    # Orient CCW if requested (helps interpret the winding check).
+    """  # Orient CCW if requested (helps interpret the winding check).
     signed_a = polygon_area(P, signed=True)
     if enforce_ccw and signed_a < 0:
         P = P[::-1].copy()
-        signed_a = -signed_a
+        signed_a = -signed_a """
 
     prevP = np.roll(P, 1, axis=0)
     nextP = np.roll(P, -1, axis=0)
@@ -189,6 +189,9 @@ def signed_chain_area(signed_chain, point_cloud:  NDArray[np.float64]) -> float:
     total_area = 0
 
     for index, path in enumerate(paths):
+        if len(path) <= 2:
+            print(paths)
+            raise ValueError("Paths too short")
         if index == index_max:
             total_area += polygon_area(point_cloud[path])
         else:
@@ -200,6 +203,9 @@ def signed_chain_excess_curvature(signed_chain, point_cloud: NDArray[np.float64]
     paths = list( signed_chain.polyhedral_paths(point_cloud) )
     total = 0
     for path in paths:
+        if len(path) <= 2:
+            print(paths)
+            raise ValueError("Paths too short")
         total += curvature_excess(point_cloud[path])
 
     return total

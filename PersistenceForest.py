@@ -261,6 +261,11 @@ class SignedChain:
 
             paths.append(np.array(path_vertices, dtype=np.int32))
 
+        for path in paths:
+            if len(path)<=2:
+                print(paths)
+                raise ValueError("Path too short in SignedChain.polyhedral_path() method")
+
         return paths
 
 

@@ -45,7 +45,7 @@ def _plot_barcode_generic(
         sort: str | None = "birth",   # "length" | "birth" | "death" | None
         title: str = "Barcode",
         xlabel: str = "filtration value",
-        coloring: Literal["forest", "bars","none"] = "forest",
+        coloring: Literal["forest", "bars","none","grey"] = "forest",
         max_bars: int = 0,
         min_bar_length: float = 0.0,
     ):
@@ -100,10 +100,8 @@ def _plot_barcode_generic(
         if not hasattr(forest, "color_map_bars"):
             forest._build_color_map_bars()
         color_map = forest.color_map_bars
-    elif coloring =="none":
-        color_map = {}
     else:
-        raise ValueError("Invalid Coloring input")
+        color_map = {}
 
     # ---- Work on a copy so we don't mutate original order ----
     bars = list(forest.barcode)
@@ -184,6 +182,9 @@ def _plot_barcode_generic(
             x0, x1 = x1, x0
 
         color = color_map.get(b, None)
+        if coloring == "grey":
+            color = "grey"
+
         line_kwargs = {
             "y": i,
             "xmin": x0,
