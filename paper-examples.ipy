@@ -71,8 +71,8 @@ double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimite
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
 fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (5,2.5))
-double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, loop_edge_arrows=True, title="Signed Cycle",show=False)
-double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, loop_edge_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
+double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, loop_edge_arrows=True, title="Signed Cycle",show=False)
+double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, loop_edge_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
 axes[0].axis('off')
 axes[1].axis('off')
 axes[0].set_title(None)
@@ -80,6 +80,60 @@ axes[1].set_title(None)
 fig.tight_layout(pad=0.1)
 fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=True)
 plt.show()
+
+
+# %%
+from cycle_rep_vectorisations import signed_chain_excess_connected_components
+from forest_landscapes import plot_landscape_comparison
+
+connected_islands_cloud = np.loadtxt("circle_with_connected_inner_islands.csv",  delimiter=",", skiprows=1) *100
+disconnected_islands_cloud = connected_islands_cloud[:-7]
+
+connected_islands_forest = PersistenceForest( connected_islands_cloud )
+disconnected_islands_forest= PersistenceForest( disconnected_islands_cloud )
+
+forests = [ disconnected_islands_forest,connected_islands_forest]
+forest_labels = ["Disconnected Islands","Connected Islands"]
+labels = ["Unsigned Excess Components","Signed Excess Components"]
+
+for object in forests:
+    object.compute_generalized_landscape_family(
+        cycle_func=signed_chain_excess_connected_components,
+        max_k=6,
+        num_grid_points=1000,
+        label="Signed Excess Components",
+        signed=True)   
+
+    object.compute_generalized_landscape_family(
+        cycle_func=signed_chain_excess_connected_components,
+        max_k=6,
+        num_grid_points=1000,
+        label="Unsigned Excess Components",
+        signed=False)   
+    
+    object.plot_landscape_comparison_between_functionals(labels=labels)
+
+color_palette = sns.color_palette("tab10")
+fix, axes = plt.subplots(ncols=2,nrows=2, figsize = (8,6))
+for i, forest in enumerate(forests):
+    axes[0,i].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=3, color= color_palette[i])
+    axes[0,i].set_aspect('equal')
+    axes[0,i].set_box_aspect(1)
+    axes[0,i].set_title(forest_labels[i])
+
+for j, label in enumerate(labels):
+    if label == "Unsigned Excess Components":
+        title = "Excess components landscape for unsigned Chains"
+    else:
+        title = "Excess components landscape for signed Chains"
+    plot_landscape_comparison(forests=forests, forest_labels=forest_labels,label=label, ax=axes[1,j],title="Excess ")
+    axes[1,j].set_xlim([5,40])
+    axes[1,j].set_ylim([-1,25])
+
+fig.savefig('paper_figures/signed_chains_for_conconnected_components.pdf', transparent=True, dpi=300)
+
+plt.show()
+
 
 # %% Example: Dual filtration
 rng = np.random.default_rng(35)
@@ -89,6 +143,7 @@ points = np.sqrt(np.abs(np.cos(1.5*points))+.1)[:,None] * np.column_stack((np.co
 loop_forest = LoopForest(points, print_info=True)
 
 #change start color for loop forest - you can pick a color of your choosing here
+#this color map will be used in all consecutive plots for this forest
 loop_forest._build_color_map_forest(start_color="#5ace2c")
 
 alpha_max = max(v for (_,v) in loop_forest.filtration)
@@ -103,19 +158,19 @@ fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300
 # %%
 color_palette = sns.color_palette("tab10")
 
-fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(10, 5), gridspec_kw={"height_ratios": [1.0, 1]})
+fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(10, 5), gridspec_kw={"height_ratios": [1, 1]})
 for i in range(4):
-    name, forest = [("circle", circle_forest), ("ellipse", ellipse_forest), ("circle_line", circle_line_forest), ("star", star_forest)][i]
+    name, forest = [("Circle", circle_forest), ("Ellipse", ellipse_forest), ("Circle with Line", circle_line_forest), ("Star", star_forest)][i]
     point_cloud = forest.point_cloud
 
     #point cloud
-    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=1, color= color_palette[i])
+    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=1, color= color_palette[i+1])
     axes[0,i].set_aspect('equal')
     axes[0,i].set_box_aspect(1)
     axes[0,i].set_title(name)
 
     axes[1,i].set_box_aspect(1)
-    forest.plot_barcode(ax=axes[1,i],max_bars=10, sort="death", title=f"{name} barcode")
+    forest.plot_barcode(ax=axes[1,i],max_bars=25, sort="death", title=f"Barcode of {name} ", coloring="none")
     axes[1,i].set_xlim((0,0.7))
 
 

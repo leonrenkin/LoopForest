@@ -52,21 +52,28 @@ pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landsc
 # %%
 from cycle_rep_vectorisations import signed_chain_excess_connected_components, signed_chain_area, signed_chain_connected_components, signed_chain_connected_components, signed_chain_excess_connected_components
 
-double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
+double_edge_cloud = np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
+
+double_edge_forest.plot_at_filtration(15)
+signed_cycle = double_edge_forest.max_bar().cycle_at_filtration_value(15)
+
+print(signed_cycle.polyhedral_paths(point_cloud=double_edge_forest.point_cloud))
+
+# %%
 
 double_edge_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_connected_components,
     max_k=6,
     num_grid_points=1000,
-    label="components",
+    label="signed components",
 )
 
 double_edge_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_excess_connected_components,
     max_k=6,
     num_grid_points=1000,
-    label="excess components",)
+    label="signed excess components",)
 
 double_edge_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_connected_components,
@@ -82,14 +89,15 @@ double_edge_forest.compute_generalized_landscape_family(
     label="unsigned excess components",
     signed=False)   
 
-double_edge_forest.plot_landscape_family(label="components")
-double_edge_forest.plot_landscape_family(label="unsigned components")
+double_edge_forest.plot_landscape_comparison_between_functionals(labels=["signed components", "unsigned components"] )
+double_edge_forest.plot_landscape_comparison_between_functionals(labels=["signed excess components", "unsigned excess components"] )
 
-double_edge_forest.plot_landscape_family(label="excess components")
+double_edge_forest.plot_landscape_family(label="signed excess components")
 double_edge_forest.plot_landscape_family(label="unsigned excess components")
 
 # %%
 from cycle_rep_vectorisations import signed_chain_excess_curvature
+
 double_edge_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_excess_curvature,
     max_k=6,
