@@ -186,8 +186,8 @@ class SignedChain:
             cross = pv[0] * nv[1] - pv[1] * nv[0]
             dot   = pv[0] * nv[0] + pv[1] * nv[1]
             angle = math.atan2(cross, dot)  # ∈ (-π, π]
-            if angle < 0.0:
-                angle += 2.0 * math.pi
+            if np.all(pv == -nv):
+                angle = -math.pi
             return angle
 
         # Precompute adjacency: start vertex -> list of (signed_simplex, end_vertex)
@@ -222,7 +222,7 @@ class SignedChain:
                 candidates = edges_by_start.get(cur_vertex, [])
                 if not candidates:
                     # No outgoing edges from this vertex
-                    break
+                    raise ValueError("No outgoing edges, this should not happen")
 
                 best_edge: Optional[tuple] = None
                 best_next_vertex: Optional[int] = None
@@ -238,14 +238,14 @@ class SignedChain:
 
                     angle = _angle_ccw(prev_vec, next_vec)
 
-                    if best_angle is None or angle < best_angle:
+                    if best_angle is None or angle > best_angle:
                         best_angle = angle
                         best_edge = edge_key
                         best_next_vertex = int(next_vertex)
 
                 if best_edge is None or best_next_vertex is None:
                     # Only degenerate candidates
-                    break
+                    raise ValueError("Only degenerate candidates, this should not happen")
 
                 # Stop if we would traverse an already covered signed simplex
                 if best_edge in visited:
@@ -260,6 +260,8 @@ class SignedChain:
                 prev_vec = p_cur - p_prev
 
             paths.append(np.array(path_vertices, dtype=np.int32))
+
+        print(len(paths))
 
         return paths
 
@@ -1468,6 +1470,9 @@ class PersistenceForest:
         from forest_landscapes import plot_landscape_family
         return plot_landscape_family(self, label,*args,**kwargs)
 
+    def plot_landscape_comparison_between_functionals(self, labels: list[str],*args, **kwargs):
+        from forest_landscapes import plot_landscape_comparison_between_functionals
+        return plot_landscape_comparison_between_functionals(self, labels=labels, *args, **kwargs)
 
 # --------- Animate comparison ------------
 
