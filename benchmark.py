@@ -44,6 +44,36 @@ from point_cloud_sampling import (
     sample_noisy_sphere,
 )
 
+# Paths and file naming
+BENCHMARK_DIR = os.path.join(os.path.dirname(__file__), "benchmarks")
+
+
+def _benchmark_path(name: str, ext: str) -> str:
+    """Return the path to a benchmark artifact inside ``benchmarks/``."""
+    filename = name if name.endswith(f".{ext}") else f"{name}.{ext}"
+    return os.path.join(BENCHMARK_DIR, filename)
+
+
+def _resolve_csv_path(csv_path: Optional[str], benchmark_name: Optional[str]) -> str:
+    """Prefer an explicit path, otherwise build one from ``benchmark_name``."""
+    if csv_path and benchmark_name:
+        raise ValueError("Provide only one of csv_path or benchmark_name")
+    if csv_path:
+        return csv_path
+    if benchmark_name:
+        return _benchmark_path(benchmark_name, "csv")
+    raise ValueError("Provide csv_path or benchmark_name")
+
+
+def _resolve_figure_path(save_path: Optional[str], artifact_name: Optional[str]) -> Optional[str]:
+    """Prefer an explicit figure path, otherwise build one from the given name."""
+    if save_path:
+        return save_path
+    if artifact_name:
+        return _benchmark_path(artifact_name, "png")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Sampling configuration
 # ---------------------------------------------------------------------------
@@ -70,6 +100,61 @@ def _make_samplers() -> Dict[str, Sampler]:
 # ---------------------------------------------------------------------------
 # Benchmark core
 # ---------------------------------------------------------------------------
+
+
+def make_sizes_linear(min_size: int, max_size: int, count: int) -> list[int]:
+    """Create a linearly spaced list of sizes between ``min_size`` and ``max_size``."""
+    if min_size <= 0 or max_size <= 0:
+        raise ValueError("min_size and max_size must be positive")
+    if max_size < min_size:
+        raise ValueError("max_size must be >= min_size")
+    if count < 1:
+        raise ValueError("count must be at least 1")
+
+    if count == 1:
+        return [int(min_size)]
+
+    raw = np.linspace(min_size, max_size, count)
+    sizes: list[int] = []
+    for val in raw:
+        size = int(round(val))
+        if not sizes or size != sizes[-1]:
+            sizes.append(size)
+    sizes[0] = int(min_size)
+    sizes[-1] = int(max_size)
+    return sizes
+
+
+def make_sizes_log(min_size: int, max_size: int, count: int, base: float = 10.0) -> list[int]:
+    """Create a log-spaced list of sizes between ``min_size`` and ``max_size``."""
+    if min_size <= 0 or max_size <= 0:
+        raise ValueError("min_size and max_size must be positive for log spacing")
+    if max_size < min_size:
+        raise ValueError("max_size must be >= min_size")
+    if count < 1:
+        raise ValueError("count must be at least 1")
+
+    if count == 1:
+        return [int(min_size)]
+
+    raw = np.logspace(
+        np.log(min_size) / np.log(base),
+        np.log(max_size) / np.log(base),
+        count,
+        base=base,
+    )
+    sizes: list[int] = []
+    for val in raw:
+        size = int(round(val))
+        if size < min_size:
+            size = int(min_size)
+        if size > max_size:
+            size = int(max_size)
+        if not sizes or size != sizes[-1]:
+            sizes.append(size)
+    sizes[0] = int(min_size)
+    sizes[-1] = int(max_size)
+    return sizes
 
 
 def generate_point_cloud(
@@ -135,9 +220,10 @@ def benchmark_suite(
     sizes: Iterable[int],
     n_repeats: int,
     base_seed: int,
-    csv_path: str,
+    csv_path: Optional[str] = None,
     reduce: bool = True,
     compute_barcode: bool = True,
+    benchmark_name: Optional[str] = None,
 ) -> None:
     """Run the benchmark and write results to a CSV file.
 
@@ -155,14 +241,21 @@ def benchmark_suite(
         Base random seed; a different seed is derived for each run but
         is deterministic and reproducible.
     csv_path:
-        Output path for the CSV file with all timing data.
+        Output path for the CSV file with all timing data. If omitted,
+        provide ``benchmark_name`` instead to automatically save in
+        ``benchmarks/{benchmark_name}.csv``.
     reduce, compute_barcode:
         Passed through to ``PersistenceForest``. You may want to set
         ``compute_barcode=False`` if you only care about the forest
         construction time.
+    benchmark_name:
+        Optional short name used to derive the CSV path inside the
+        ``benchmarks`` directory.
     """
     methods = list(methods)
     sizes = [int(s) for s in sizes]
+
+    csv_path = _resolve_csv_path(csv_path, benchmark_name)
 
     fieldnames = [
         "sampler",
@@ -211,13 +304,18 @@ def benchmark_suite(
                     writer.writerow(result)
 
 def plot_runtimes_from_csv(
-    csv_path: str,
+    csv_path: Optional[str],
     methods: Sequence[str],
     time_column: str = "time_persistence_forest_s",
     ax = None,
     show_std: bool = True,
     save_dir: Optional[str]=None,
-    label_dict: Optional[dict[str,str]] = None
+    label_dict: Optional[dict[str,str]] = None,
+    benchmark_name: Optional[str] = None,
+    figure_name: Optional[str] = None,
+    log_scale: bool = False,
+    title: Optional[str] = None,
+    show_axis_labels: bool = True,
 ) :
     """
     Plot runtimes vs. number of points for a list of methods.
@@ -225,7 +323,9 @@ def plot_runtimes_from_csv(
     Parameters
     ----------
     csv_path:
-        Path to the CSV produced by `benchmark_suite`.
+        Path to the CSV produced by ``benchmark_suite``. If omitted,
+        set ``benchmark_name`` to look inside ``benchmarks/`` using
+        ``benchmarks/{benchmark_name}.csv``.
     methods:
         Iterable of sampler names (the `sampler` column in the CSV) to plot.
     time_column:
@@ -237,12 +337,28 @@ def plot_runtimes_from_csv(
     show_std:
         If True, draw vertical error bars showing the standard deviation
         over repeated runs for each (method, n_points) pair.
+    benchmark_name:
+        Optional short name used to derive the CSV path inside the
+        ``benchmarks`` directory. Also used as the default figure name
+        when ``figure_name`` is not provided.
+    figure_name:
+        Optional name used for saving the figure into ``benchmarks``.
+        Defaults to ``benchmark_name`` when set.
+    log_scale:
+        If True, use log-log axes for points and time.
+    log_scale:
+        If True, use log-log axes for points and time.
+    title:
+        Optional title for the plot. Defaults to a generic runtime title
+        when not provided.
 
     Returns
     -------
     ax:
         The matplotlib Axes containing the plot.
     """
+    csv_path = _resolve_csv_path(csv_path, benchmark_name)
+
     # Read CSV
     with open(csv_path, "r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
@@ -306,23 +422,111 @@ def plot_runtimes_from_csv(
         else:
             ax.plot(xs, ys_mean, marker="o", label=label)
 
-    ax.set_xlabel("Number of points")
-    ax.set_ylabel("Time [s]")
-    ax.set_title(f"PersistenceForest runtime vs. number of points")
+    if show_axis_labels:
+        ax.set_xlabel("Number of points")
+        ax.set_ylabel("Time [s]")
+    if log_scale:
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+    if title is not None:
+        ax.set_title(title)
     ax.grid(True, alpha=0.3)
     ax.legend()
 
-    if save_dir is not None:
-        plt.savefig(save_dir, dpi =300)
+    save_path = _resolve_figure_path(save_dir, figure_name or benchmark_name)
+    if save_path is not None:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        plt.savefig(save_path, dpi =300)
 
     return ax
+
+def plot_benchmark_grid(
+    layout: Sequence[tuple[int, int, str, Sequence[str], bool]],
+    label_dict: dict[str, str],
+    column_titles: Sequence[str],
+    row_titles: Sequence[str],
+    figure_title: str,
+    output_name: str,
+) -> None:
+    """Render a 2x2 grid of benchmark plots with column/row headers."""
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9), gridspec_kw={"width_ratios": [1, 1]})
+
+    for row, col, bench_name, methods, log_scale in layout:
+        plot_runtimes_from_csv(
+            csv_path=_benchmark_path(bench_name, "csv"),
+            methods=methods,
+            time_column="time_persistence_forest_s",
+            label_dict=label_dict,
+            ax=axes[row, col],
+            log_scale=log_scale,
+            title=None,
+            show_axis_labels=False,
+        )
+
+    for col, title in enumerate(column_titles):
+        bbox = axes[0, col].get_position()
+        x_center = bbox.x0 + bbox.width / 2
+        fig.text(x_center, bbox.y1 + 0.03, title, ha="center", va="bottom", fontsize=12, fontweight="bold")
+
+    for row, title in enumerate(row_titles):
+        bbox = axes[row, 0].get_position()
+        y_center = bbox.y0 + bbox.height / 2
+        fig.text(bbox.x0 - 0.05, y_center, title, ha="center", va="center", rotation="vertical", fontsize=11, fontweight="bold")
+
+    fig.supxlabel("Number of points", fontsize=12)
+    fig.supylabel("Time in seconds", fontsize=12)
+    fig.savefig(_benchmark_path(output_name, "png"), dpi=300)
+    plt.show()
+
+def plot_benchmark_row(
+    layout: Sequence[tuple[int, int, str, Sequence[str], bool]],
+    label_dict: dict[str, str],
+    column_titles: Sequence[str],
+    figure_title: str,
+    output_name: str,
+) -> None:
+    """Render a 1x2 grid (e.g., only linear or only log plots)."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), gridspec_kw={"width_ratios": [1, 1]})
+
+    for _, col, bench_name, methods, log_scale in layout:
+        plot_runtimes_from_csv(
+            csv_path=_benchmark_path(bench_name, "csv"),
+            methods=methods,
+            time_column="time_persistence_forest_s",
+            label_dict=label_dict,
+            ax=axes[col],
+            log_scale=log_scale,
+            title=None,
+            show_axis_labels=False,
+        )
+
+    for col, title in enumerate(column_titles):
+        bbox = axes[col].get_position()
+        x_center = bbox.x0 + bbox.width / 2
+        fig.text(x_center, bbox.y1 + 0.03, title, ha="center", va="bottom", fontsize=12, fontweight="bold")
+
+    fig.supxlabel("Number of points", fontsize=12)
+    fig.supylabel("Time in seconds", fontsize=12)
+    fig.savefig(_benchmark_path(output_name, "png"), dpi=300)
+    plt.show()
 
 if __name__ == "__main__":
 
     samplers = _make_samplers()
 
-    methods = ["uniform_2D","noisy_circle_noise-std-dot05","uniform_2D_with_30holes_radius-max-dot05"]
+    methods_2d = ["uniform_2D","noisy_circle_noise-std-dot05","uniform_2D_with_30holes_radius-max-dot05"]
     methods_3d = ["uniform_3D","noisy_2sphere_noise-std-dot05","uniform_3D_with_30holes_radius-max-dot05"]
+
+    # Example size schedules
+    max_size_2d = 200000
+    max_size_3d = 50000
+
+    sizes_linear_2d = make_sizes_linear(min_size=20000, max_size=max_size_2d, count=10)
+    sizes_log_2d = make_sizes_log(min_size=100, max_size=max_size_2d, count=20)
+    sizes_linear_3d = make_sizes_linear(min_size=5000, max_size=max_size_3d, count=10)
+    sizes_log_3d = make_sizes_log(min_size=100, max_size=max_size_3d, count=20)
+
+    
 
     label_dict = {"uniform_2D":"uniform 2D",
                   "noisy_circle_noise-std-dot05":"perturbed 1-sphere",
@@ -331,29 +535,75 @@ if __name__ == "__main__":
                   "noisy_2sphere_noise-std-dot05":"perturbed 2-sphere",
                   "uniform_3D_with_30holes_radius-max-dot05":"uniform 3D with 30holes"}
 
-    name = "benchmarks/persistence_forest_benchmark_tmp"
+    name_2d = "benchmark_2d_lin_max-200000_10steps_10reps"
+    name_3d = "benchmark_3d_lin_max-50000_10steps_10reps"
+    name_2d_log = "benchmark_2d_log_max-200000_20steps_10reps"
+    name_3d_log = "benchmark_3d_log_max-50000_20steps_10reps"
 
-    filename = name +".csv"
-    save_dir = name +".png"
+    n_repeats = 10
+
 
     if False:
         benchmark_suite(
             samplers=samplers,
-            methods=methods + methods_3d,
-            sizes=[100,250,500,750,1000, 2500,5000,7500,10000,1500,20000,30000,40000],
-            n_repeats=10,
+            methods=methods_2d,
+            sizes=sizes_linear_2d,
+            n_repeats=n_repeats,
             base_seed=12345,
-            csv_path=filename,
+            benchmark_name=name_2d,
+            reduce=True,
+            compute_barcode=True, 
+        )
+
+    if False:
+        benchmark_suite(
+            samplers=samplers,
+            methods=methods_3d,
+            sizes=sizes_linear_3d,
+            n_repeats=n_repeats,
+            base_seed=12345,
+            benchmark_name=name_3d,
             reduce=True,
             compute_barcode=True, 
         )
 
     if True:
-        plot_runtimes_from_csv(
-        csv_path=filename,
-        methods=methods_3d,
-        time_column="time_persistence_forest_s",
-        save_dir=save_dir,
-        label_dict=label_dict
+        grid_spec = [
+            (0, 0, name_2d, methods_2d, False),
+            (0, 1, name_3d, methods_3d, False),
+            (1, 0, name_2d_log, methods_2d, True),
+            (1, 1, name_3d_log, methods_3d, True),
+        ]
+
+        plot_benchmark_grid(
+            layout=grid_spec,
+            label_dict=label_dict,
+            column_titles=["2D benchmarks", "3D benchmarks"],
+            row_titles=["Linear scale", "Log scale"],
+            figure_title="PersistenceForest runtime vs. number of points",
+            output_name="benchmark_grid",
         )
-        plt.show()
+
+        linear_spec = [
+            (0, 0, name_2d, methods_2d, False),
+            (0, 1, name_3d, methods_3d, False),
+        ]
+        plot_benchmark_row(
+            layout=linear_spec,
+            label_dict=label_dict,
+            column_titles=["2D benchmarks", "3D benchmarks"],
+            figure_title="PersistenceForest runtime (linear scale)",
+            output_name="benchmark_linear_only",
+        )
+
+        log_spec = [
+            (0, 0, name_2d_log, methods_2d, True),
+            (0, 1, name_3d_log, methods_3d, True),
+        ]
+        plot_benchmark_row(
+            layout=log_spec,
+            label_dict=label_dict,
+            column_titles=["2D benchmarks", "3D benchmarks"],
+            figure_title="PersistenceForest runtime (log-log scale)",
+            output_name="benchmark_log_only",
+        )
