@@ -311,6 +311,8 @@ def plot_runtimes_from_csv(
     show_std: bool = True,
     save_dir: Optional[str]=None,
     label_dict: Optional[dict[str,str]] = None,
+    color_dict: Optional[dict[str, str]] = None,
+    linestyle_dict: Optional[dict[str, str]] = None,
     benchmark_name: Optional[str] = None,
     figure_name: Optional[str] = None,
     log_scale: bool = False,
@@ -337,6 +339,12 @@ def plot_runtimes_from_csv(
     show_std:
         If True, draw vertical error bars showing the standard deviation
         over repeated runs for each (method, n_points) pair.
+    label_dict:
+        Optional mapping from method name to display label.
+    color_dict:
+        Optional mapping from method name to color (hex string or Matplotlib color).
+    linestyle_dict:
+        Optional mapping from method name to line style (e.g., "-", "--").
     benchmark_name:
         Optional short name used to derive the CSV path inside the
         ``benchmarks`` directory. Also used as the default figure name
@@ -344,8 +352,6 @@ def plot_runtimes_from_csv(
     figure_name:
         Optional name used for saving the figure into ``benchmarks``.
         Defaults to ``benchmark_name`` when set.
-    log_scale:
-        If True, use log-log axes for points and time.
     log_scale:
         If True, use log-log axes for points and time.
     title:
@@ -397,10 +403,10 @@ def plot_runtimes_from_csv(
             print(f"[plot_runtimes_from_csv] Warning: no data for method {method!r}")
             continue
 
-        if label_dict is not None:
-            label = label_dict[method]
-        else:
-            label = method
+        label = label_dict.get(method, method) if label_dict is not None else method
+
+        color = color_dict.get(method) if color_dict is not None else None
+        linestyle = linestyle_dict.get(method) if linestyle_dict is not None else "-"
 
         n_to_times = data[method]
         xs = sorted(n_to_times.keys())
@@ -418,9 +424,11 @@ def plot_runtimes_from_csv(
                 marker="o",
                 capsize=3,
                 label=label,
+                color=color,
+                linestyle=linestyle,
             )
         else:
-            ax.plot(xs, ys_mean, marker="o", label=label)
+            ax.plot(xs, ys_mean, marker="o", label=label, color=color, linestyle=linestyle)
 
     if show_axis_labels:
         ax.set_xlabel("Number of points")
@@ -447,6 +455,8 @@ def plot_benchmark_grid(
     row_titles: Sequence[str],
     figure_title: str,
     output_name: str,
+    color_dict: Optional[dict[str, str]] = None,
+    linestyle_dict: Optional[dict[str, str]] = None,
 ) -> None:
     """Render a 2x2 grid of benchmark plots with column/row headers."""
     fig, axes = plt.subplots(2, 2, figsize=(12, 9), gridspec_kw={"width_ratios": [1, 1]})
@@ -457,6 +467,8 @@ def plot_benchmark_grid(
             methods=methods,
             time_column="time_persistence_forest_s",
             label_dict=label_dict,
+            color_dict=color_dict,
+            linestyle_dict=linestyle_dict,
             ax=axes[row, col],
             log_scale=log_scale,
             title=None,
@@ -473,8 +485,9 @@ def plot_benchmark_grid(
         y_center = bbox.y0 + bbox.height / 2
         fig.text(bbox.x0 - 0.05, y_center, title, ha="center", va="center", rotation="vertical", fontsize=11, fontweight="bold")
 
+    #fig.suptitle(figure_title, fontsize=13, y=0.98)
     fig.supxlabel("Number of points", fontsize=12)
-    fig.supylabel("Time in seconds", fontsize=12)
+    fig.supylabel("Time [s]", fontsize=12)
     fig.savefig(_benchmark_path(output_name, "png"), dpi=300)
     plt.show()
 
@@ -484,6 +497,8 @@ def plot_benchmark_row(
     column_titles: Sequence[str],
     figure_title: str,
     output_name: str,
+    color_dict: Optional[dict[str, str]] = None,
+    linestyle_dict: Optional[dict[str, str]] = None,
 ) -> None:
     """Render a 1x2 grid (e.g., only linear or only log plots)."""
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), gridspec_kw={"width_ratios": [1, 1]})
@@ -494,6 +509,8 @@ def plot_benchmark_row(
             methods=methods,
             time_column="time_persistence_forest_s",
             label_dict=label_dict,
+            color_dict=color_dict,
+            linestyle_dict=linestyle_dict,
             ax=axes[col],
             log_scale=log_scale,
             title=None,
@@ -505,8 +522,9 @@ def plot_benchmark_row(
         x_center = bbox.x0 + bbox.width / 2
         fig.text(x_center, bbox.y1 + 0.03, title, ha="center", va="bottom", fontsize=12, fontweight="bold")
 
+    #fig.suptitle(figure_title, fontsize=13, y=0.94)
     fig.supxlabel("Number of points", fontsize=12)
-    fig.supylabel("Time in seconds", fontsize=12)
+    fig.supylabel("Time [s]", fontsize=12)
     fig.savefig(_benchmark_path(output_name, "png"), dpi=300)
     plt.show()
 
@@ -534,6 +552,13 @@ if __name__ == "__main__":
                   "uniform_3D":"uniform 3D",
                   "noisy_2sphere_noise-std-dot05":"perturbed 2-sphere",
                   "uniform_3D_with_30holes_radius-max-dot05":"uniform 3D with 30holes"}
+
+    # Styling: use three non-default colors (outside Matplotlib's first four).
+    custom_colors = ["#8da0cb", "#fc8d62", "#66c2a5"]
+    linestyle_cycle = ["-", "--", "-.", ":"]
+    all_methods = methods_2d + methods_3d
+    linestyle_dict = {m: linestyle_cycle[i % len(linestyle_cycle)] for i, m in enumerate(all_methods)}
+    color_dict = {m: custom_colors[i % len(custom_colors)] for i, m in enumerate(all_methods)}
 
     name_2d = "benchmark_2d_lin_max-200000_10steps_10reps"
     name_3d = "benchmark_3d_lin_max-50000_10steps_10reps"
@@ -582,6 +607,7 @@ if __name__ == "__main__":
             row_titles=["Linear scale", "Log scale"],
             figure_title="PersistenceForest runtime vs. number of points",
             output_name="benchmark_grid",
+            color_dict=color_dict,
         )
 
         linear_spec = [
@@ -594,6 +620,7 @@ if __name__ == "__main__":
             column_titles=["2D benchmarks", "3D benchmarks"],
             figure_title="PersistenceForest runtime (linear scale)",
             output_name="benchmark_linear_only",
+            color_dict=color_dict,
         )
 
         log_spec = [
@@ -606,4 +633,5 @@ if __name__ == "__main__":
             column_titles=["2D benchmarks", "3D benchmarks"],
             figure_title="PersistenceForest runtime (log-log scale)",
             output_name="benchmark_log_only",
+            color_dict=color_dict,
         )

@@ -357,7 +357,7 @@ def sample_points_without_balls(
     while len(points) < n and total_trials < max_trials:
         remaining = n - len(points)
         # Draw in reasonably large batches for efficiency
-        batch_size = max(1000, 2 * remaining)
+        batch_size = min(100000, max(5000, 5 * remaining))
         candidates = rng.random((batch_size, dim))  # uniform in [0,1]^d
 
         if num_discs > 0:

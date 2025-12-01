@@ -78,7 +78,7 @@ def signed_boundary(simplex: List[int], orientation: int):
 
 # ------------ Classes ---------------
 
-@dataclass
+@dataclass(slots=True)
 class SignedChain: 
     signed_simplices: Set[tuple]        # oriented d-simplices, stored as (simplex, orientation)
     active_start: float = float("-inf")
@@ -270,7 +270,7 @@ class SignedChain:
 
 
 
-@dataclass
+@dataclass(slots=True)
 class PFNode:
     """ Objects which are the nodes in the LoopForest graph. 
     Each node has a loop representative."""
