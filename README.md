@@ -60,7 +60,7 @@ python pers_forest_example.py
 `benchmark.py` measures construction time across sampling schemes (`point_cloud_sampling.py`). Toggle the `if False/True` blocks in `__main__` to:
 - generate CSVs into `benchmarks/` for chosen samplers/size schedules, or
 - render the runtime plots from existing CSVs.
-Artifacts used in the manuscript are in `benchmarks/` (e.g., `persistence_forest_benchmark2.csv`).
+Artifacts used in the manuscript are in `benchmarks/`.
 
 ## Repository guide
 - `PersistenceForest.py` – forest construction, barcodes, plotting wrappers, generalized landscapes.
