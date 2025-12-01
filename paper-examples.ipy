@@ -196,10 +196,12 @@ fig, axes = plt.subplots(nrows=1,ncols=3, figsize=(10, 2.5))
 
 cycle_funcs_list = [("Length",signed_chain_edge_length),("Area",signed_chain_area), ("Excess Curvature",signed_chain_excess_curvature)]
 
+use_signed = False
+
 for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     for j,(name, forest) in enumerate(name_forest_list):
 
-        forest.plot_barcode_measurement(cycle_func=cycle_func, ax = axes[i], signed=True, label = name, show_baseline = False, x_range = [0,7],color = color_palette[j])
+        forest.plot_barcode_measurement(cycle_func=cycle_func, ax = axes[i], signed=use_signed, label = name, show_baseline = False, x_range = [0,7],color = color_palette[j])
 
         
     axes[i].set_title(func_name)
@@ -226,7 +228,7 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
             max_k=6,
             num_grid_points=1000,
             label=func_name,
-            signed=True) 
+            signed=use_signed) 
 
     plot_landscape_comparison(forests=forests,label = func_name, ax = axes[i], forest_labels = forest_labels)
 
