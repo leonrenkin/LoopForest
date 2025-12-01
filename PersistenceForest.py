@@ -1649,9 +1649,11 @@ class PersistenceForest:
     # --------- animation -------------
 
     def animate_filtration(
-        self,
-        *args,
-        **kwargs
+            self,
+            filename: Optional[str] = None,
+            with_barcode: bool = False,
+            *args,
+            **kwargs
     ):
         """
         Create an animation of the loop forest over the filtration.
@@ -1705,11 +1707,25 @@ class PersistenceForest:
             The figure on which the animation is drawn.
         """
         from forest_plotting import _animate_filtration_generic
-        return _animate_filtration_generic(self, *args, **kwargs)
+        return _animate_filtration_generic(self, with_barcode=with_barcode,filename=filename, *args, **kwargs)
 
     #------- generalized landscape ----------------
 
-    def plot_barcode_measurement(self, cycle_func, signed = True, bar = None, show =False, *args,**kwargs):
+    def plot_barcode_measurement(
+        self,
+        cycle_func,
+        signed: bool = True,
+        bar = None,
+        ax=None,
+        x_range: Optional[Tuple[float, float]] = None,
+        y_range: Optional[Tuple[float, float]] = None,
+        title: Optional[str] = None,
+        label: Optional[str] = None,
+        show_baseline: bool = True,
+        show: bool = False,
+        *args,
+        **kwargs,
+    ):
         """
         Plot a scalar measurement of cycles along each bar.
 
@@ -1717,23 +1733,25 @@ class PersistenceForest:
         ----------
         cycle_func : callable
             Function returning a scalar for a SignedChain and point cloud.
-        signed : bool
+        signed : bool, default True
             If False, evaluate the metric after cancelling opposing simplices.
         bar : PFBar | None
             If provided, restrict the plot to a single bar.
+        ax : matplotlib.axes.Axes | None
+            Axes to draw on; if None, a new figure is created.
+        x_range, y_range : (float, float) | None
+            Manual axis limits for the step plot.
+        title : str | None
+            Custom plot title.
+        label : str | None
+            Legend label for the curve.
+        show_baseline : bool
+            If True, draw the baseline of the step function.
         show : bool
             If True, call ``plt.show()`` after plotting.
-        *args, **kwargs :
-            Forwarded to ``plot_barcode_measurement_generic``. Common options:
-                - ``ax`` (matplotlib.axes.Axes): draw on this axes.
-                - ``x_range`` / ``y_range`` ((float, float)): manual axis limits.
-                - ``title`` (str): custom plot title.
-                - ``label`` (str): label for legend.
-                - ``show_baseline`` (bool): draw the baseline of the step
-                  function.
-                - ``baseline_kwargs`` (dict): style for the baseline line.
-                - additional matplotlib line kwargs (e.g., ``color``, ``lw``)
-                  passed to ``StepFunctionData.plot``.
+        **kwargs :
+            Forwarded to ``StepFunctionData.plot`` (e.g., ``baseline_kwargs``,
+            line color/linewidth, etc.).
         """
         from forest_landscapes import plot_barcode_measurement_generic
 
@@ -1745,8 +1763,21 @@ class PersistenceForest:
             def _cycle_value(chain, point_cloud):
                 # `chain` is a SignedChain
                 return float(cycle_func(chain.without_double_edges(), point_cloud))
-            
-        return plot_barcode_measurement_generic(forest=self, cycle_func=_cycle_value, bar=bar, show = show,*args,**kwargs)
+
+        return plot_barcode_measurement_generic(
+            forest=self,
+            cycle_func=_cycle_value,
+            bar=bar,
+            ax=ax,
+            x_range=x_range,
+            y_range=y_range,
+            title=title,
+            label=label,
+            show_baseline=show_baseline,
+            show=show,
+            *args,
+            **kwargs,
+        )
 
     def compute_generalized_landscape_family(
         self,
@@ -1819,7 +1850,15 @@ class PersistenceForest:
             cache = cache
         )
 
-    def plot_landscape_family(self, label: str,*args, **kwargs):
+    def plot_landscape_family(
+        self,
+        label: str,
+        ks: Optional[list[int]] = None,
+        ax=None,
+        title: Optional[str] = None,
+        *args,
+        **kwargs,
+    ):
         """
         Plot a previously computed generalized landscape family.
 
@@ -1827,17 +1866,25 @@ class PersistenceForest:
         ----------
         label : str
             Identifier used when the family was computed.
-        *args, **kwargs :
-            Forwarded to ``forest_landscapes.plot_landscape_family``. Useful
-            options include:
-                - ``ks`` (list[int]): which landscape levels to plot.
-                - ``ax`` (matplotlib.axes.Axes): axes to draw on.
-                - ``title`` (str): custom plot title.
+        ks : list[int] | None
+            Which landscape levels to plot. Defaults to all available.
+        ax : matplotlib.axes.Axes | None
+            Axes to draw on; if None, a new figure is created.
+        title : str | None
+            Custom plot title.
         """
         from forest_landscapes import plot_landscape_family
-        return plot_landscape_family(self, label,*args,**kwargs)
+        return plot_landscape_family(self, label, ks=ks, ax=ax, title=title, *args, **kwargs)
 
-    def plot_landscape_comparison_between_functionals(self, labels: list[str],*args, **kwargs):
+    def plot_landscape_comparison_between_functionals(
+        self,
+        labels: list[str],
+        k: int = 1,
+        ax=None,
+        title: Optional[str] = None,
+        *args, 
+        **kwargs
+    ):
         """
         Compare multiple generalized landscape families on the same axes.
 
@@ -1845,14 +1892,14 @@ class PersistenceForest:
         ----------
         labels : list[str]
             Labels of the landscape families to compare.
-        *args, **kwargs :
-            Forwarded to ``forest_landscapes.plot_landscape_comparison_between_functionals``. Useful
-            options include:
-                - ``k`` (int): which landscape level to compare.
-                - ``ax`` (matplotlib.axes.Axes): axes to draw on.
-                - ``title`` (str): custom plot title.
+        k : int
+            Which landscape level to compare.
+        ax : matplotlib.axes.Axes | None
+            Axes to draw on; if None, a new figure is created.
+        title : str | None
+            Custom plot title.
         """
         from forest_landscapes import plot_landscape_comparison_between_functionals
-        return plot_landscape_comparison_between_functionals(self, labels=labels, *args, **kwargs)
+        return plot_landscape_comparison_between_functionals(self, labels=labels, k=k, ax=ax, title=title, *args, **kwargs)
 
 # --------- Animate comparison ------------
