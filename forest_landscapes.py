@@ -69,6 +69,28 @@ class StepFunctionData:
     ) -> matplotlib.axes.Axes:
         """
         Plot the step function represented by this object.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axis to draw on. If None, a new figure and axis are created.
+        x_range : (float, float), optional
+            Restrict the x-axis to the given range; defaults to the stored domain.
+        y_range : (float, float), optional
+            Restrict the y-axis to the given range; auto-scales when omitted.
+        show_baseline : bool, default False
+            Whether to draw a dashed line at `baseline`.
+        title : str, optional
+            Title for the plot.
+        baseline_kwargs : dict, optional
+            Extra keyword arguments forwarded to the baseline line plot.
+        **line_kwargs :
+            Keyword arguments forwarded to `ax.plot` for the step curve.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axis with the rendered step function.
         """
         if ax is None:
             _, ax = plt.subplots()
@@ -154,6 +176,19 @@ class PiecewiseLinearFunction:
     metadata: Dict[str, object] = field(default_factory=dict)
 
     def __call__(self, x: Union[NDArray[np.float64], float]) -> Union[NDArray[np.float64], float]:
+        """
+        Evaluate the piecewise-linear function at one or many points.
+
+        Parameters
+        ----------
+        x : float or array-like of float
+            Locations at which to sample the function.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            Scalar if `x` is scalar, otherwise an array of the same shape as `x`.
+        """
         if self.xs.size == 0:
             if np.isscalar(x):
                 return 0.0
@@ -222,10 +257,21 @@ class LandscapeVectorizer:
 
     def fit(self, forests: Sequence) -> "LandscapeVectorizer":
         """
-        Decide on a common time grid for all forests.
+        Decide on a common filtration grid for all forests.
 
-        If t_min / t_max are given, they are used directly; otherwise, they
-        are inferred from the barcodes (respecting min_bar_length).
+        If `t_min` / `t_max` are supplied, they are used directly; otherwise they
+        are inferred from the union of barcodes after filtering out short bars.
+
+        Parameters
+        ----------
+        forests : sequence
+            Iterable of forest-like objects that expose a `barcode` of bars with
+            `.birth` and `.death` attributes.
+
+        Returns
+        -------
+        LandscapeVectorizer
+            Self, with `x_grid_` and `is_fitted_` populated.
         """
         if len(forests) == 0:
             raise ValueError("fit() received an empty list of forests")
@@ -263,6 +309,16 @@ class LandscapeVectorizer:
     def _vectorise_single(self, forest) -> NDArray[np.float64]:
         """
         Compute the feature vector for a single LoopForest on the fixed grid.
+
+        Parameters
+        ----------
+        forest :
+            Forest-like object exposing `compute_generalized_landscape_family`.
+
+        Returns
+        -------
+        numpy.ndarray
+            Flattened landscape samples of shape `(max_k * num_grid_points,)`.
         """
         assert self.x_grid_ is not None
 
@@ -293,7 +349,15 @@ class LandscapeVectorizer:
         """
         Transform a sequence of LoopForest objects into a design matrix X.
 
-        X has shape (n_forests, max_k * num_grid_points).
+        Parameters
+        ----------
+        forests : sequence
+            Forest-like objects to vectorise.
+
+        Returns
+        -------
+        numpy.ndarray
+            Design matrix of shape `(n_forests, max_k * num_grid_points)`.
         """
         if not self.is_fitted_ or self.x_grid_ is None:
             raise RuntimeError("LandscapeVectorizer must be fitted before calling transform().")
@@ -310,7 +374,17 @@ class LandscapeVectorizer:
 
     def fit_transform(self, forests: Sequence) -> NDArray[np.float64]:
         """
-        Convenience method: fit the grid from forests and return X in one call.
+        Fit the vectorizer on the provided forests and return their features.
+
+        Parameters
+        ----------
+        forests : sequence
+            Forest-like objects to use both for fitting and transforming.
+
+        Returns
+        -------
+        numpy.ndarray
+            Design matrix of shape `(n_forests, max_k * num_grid_points)`.
         """
         self.fit(forests)
         return self.transform(forests)
@@ -363,6 +437,7 @@ class MultiLandscapeVectorizer:
     n_features_: Optional[int] = field(init=False, default=None)
 
     def __post_init__(self):
+        """Derive default function names if none are supplied."""
         if self.func_names is None:
             self.func_names = [
                 getattr(f, "__name__", f"func_{i}")
@@ -373,8 +448,18 @@ class MultiLandscapeVectorizer:
         """
         Decide on a common time grid for all forests.
 
-        If t_min / t_max are given, they are used directly; otherwise, they
-        are inferred from the barcodes (respecting min_bar_length).
+        If `t_min` / `t_max` are given, they are used directly; otherwise they
+        are inferred from the barcodes (respecting `min_bar_length`).
+
+        Parameters
+        ----------
+        forests : sequence
+            Iterable of forest-like objects with a `barcode` of bars.
+
+        Returns
+        -------
+        MultiLandscapeVectorizer
+            Self, with `x_grid_`, `dx_`, and `n_features_` initialised.
         """
         if len(forests) == 0:
             raise ValueError("fit() received an empty list of forests")
@@ -428,6 +513,18 @@ class MultiLandscapeVectorizer:
         """
         Compute the feature block for one forest and one path function f.
         Block = [samples, (optional) stats].
+
+        Parameters
+        ----------
+        forest :
+            Forest-like object exposing `compute_generalized_landscape_family`.
+        f : CycleValueFunc
+            Function used to evaluate each cycle representative.
+
+        Returns
+        -------
+        numpy.ndarray
+            Flattened samples (and optional stats) for one functional.
         """
         assert self.x_grid_ is not None and self.dx_ is not None
 
@@ -470,7 +567,15 @@ class MultiLandscapeVectorizer:
         """
         Transform a sequence of LoopForest objects into a design matrix X.
 
-        X has shape (n_forests, n_features_).
+        Parameters
+        ----------
+        forests : sequence
+            Forest-like objects to vectorise.
+
+        Returns
+        -------
+        numpy.ndarray
+            Design matrix of shape `(n_forests, n_features_)`.
         """
         if not self.is_fitted_ or self.x_grid_ is None:
             raise RuntimeError("MultiLandscapeVectorizer must be fitted before calling transform().")
@@ -495,7 +600,17 @@ class MultiLandscapeVectorizer:
 
     def fit_transform(self, forests: Sequence) -> NDArray[np.float64]:
         """
-        Convenience method: fit the grid from forests and return X in one call.
+        Fit the vectorizer on the provided forests and return their features.
+
+        Parameters
+        ----------
+        forests : sequence
+            Forest-like objects to use both for fitting and transforming.
+
+        Returns
+        -------
+        numpy.ndarray
+            Design matrix of shape `(n_forests, n_features_)`.
         """
         self.fit(forests)
         return self.transform(forests)
@@ -508,13 +623,28 @@ def _build_step_function_data(
         baseline: float = 0.0,
     ) -> StepFunctionData:
         """
-        Build the piecewise-constant function associated to a single bar:
+        Build the piecewise-constant function associated to a single bar.
 
-        For each cycle representative 'cycle' in bar.cycle_reps, we create an interval
-        [cycle.active_start, cycle.active_end] on which the function takes value
-        cycle_func(cycle,point_cloud).
+        Each cycle representative contributes an interval
+        `[cycle.active_start, cycle.active_end]` on which the function takes the
+        value `cycle_func(cycle, forest.point_cloud)`. Outside these intervals,
+        the function equals `baseline`.
 
-        Returns a StepFunctionData object.
+        Parameters
+        ----------
+        forest :
+            Forest-like object providing `point_cloud` and `barcode`.
+        bar :
+            Bar instance taken from `forest.barcode`.
+        cycle_func : CycleValueFunc
+            Callable that assigns a scalar to each cycle representative.
+        baseline : float, default 0.0
+            Value of the function outside the active intervals.
+
+        Returns
+        -------
+        StepFunctionData
+            Structured representation of the piecewise-constant function.
         """
         if bar not in forest.barcode:
             raise ValueError("Bar is not in barcode of forest")
@@ -562,12 +692,12 @@ def plot_barcode_measurement_generic(
         title: Optional[str] = None,
         label: Optional[str] = None,
         show_baseline: bool = True,
-        show = False,
+        show: bool = False,
         **kwargs,
     ) -> Tuple["matplotlib.axes.Axes", StepFunctionData]:
     """
     Plot the 'barcode measurement' for a single bar using the generalized
-    convolution machinery and the PiecewiseLinearFunction class.
+    convolution machinery and the StepFunctionData representation.
 
     Parameters
     ----------
@@ -589,16 +719,15 @@ def plot_barcode_measurement_generic(
         Title for the axes. If None, a default title is constructed.
     label : str, optional
         Label for the curve (used in legend). If None, no legend is added.
-    show_zero_tails : bool, default True
-        If True, draw dashed horizontal tails at 0 outside the support of the
-        kernel, similar to the old `plot_convolution` helper.
+    show : bool, default False
+        Whether to call `plt.show()` after plotting.
 
     Returns
     -------
     ax : matplotlib.axes.Axes
         The axis with the plot.
-    kernel : PiecewiseLinearFunction
-        The piecewise-linear function induced by cycle_func.
+    step_func : StepFunctionData
+        The piecewise-constant function induced by `cycle_func`.
     """
 
     if ax is None:
@@ -632,6 +761,15 @@ def _build_convolution_with_indicator(
         Compute h(x) = (f * 1_[a,b])(x) where:
         - f is piecewise-constant: f(t) = vals[i] on [starts[i], ends[i]] and 0 elsewhere
         - 1_[a,b] is the indicator of [a, b] (assumes a <= b)
+
+        Parameters
+        ----------
+        starts, ends, vals : list of float
+            Interval boundaries and values describing the step function f.
+        a, b : float
+            Bounds of the indicator kernel; must satisfy a <= b.
+        tol : float, default 1e-12
+            Quantisation tolerance for merging nearly coincident event points.
 
         Returns:
         (h, xs, ys)
@@ -734,7 +872,22 @@ def compute_convolution_kernel_for_bar(
             g(x) = (f * 1_[birth, death])(x)
 
         where f is the piecewise-constant function from build_step_function_data.
-        Returns g as a PiecewiseLinearFunction.
+
+        Parameters
+        ----------
+        forest :
+            Forest-like object with `barcode` and `point_cloud`.
+        bar :
+            Bar instance from `forest.barcode`.
+        cycle_func : CycleValueFunc
+            Callable that assigns a scalar value to each cycle representative.
+        tol : float, default 1e-12
+            Numerical tolerance used when merging breakpoint events.
+
+        Returns
+        -------
+        PiecewiseLinearFunction
+            Piecewise-linear convolution kernel defined on the bar interval.
         """
         sf = _build_step_function_data(forest=forest,bar=bar, cycle_func=cycle_func, baseline=0.0)
 
@@ -780,6 +933,21 @@ def compute_generalized_interval_landscape(
 
         Note: this uses the *raw* convolution (no pyramid rescaling).
         For landscapes, prefer compute_generalized_landscape_family.
+
+        Parameters
+        ----------
+        forest :
+            Forest-like object with `barcode`.
+        cycle_func : CycleValueFunc
+            Scalar-valued functional on cycle representatives.
+        bar :
+            Bar from the forest barcode; if None, `forest.max_bar()` is used.
+
+        Returns
+        -------
+        tuple
+            `(h, xs, ys)` where `h` is a callable evaluator and `xs`, `ys`
+            describe the breakpoints of the piecewise-linear kernel.
         """
         if bar is None:
             bar = forest.max_bar()
@@ -817,6 +985,24 @@ def compute_landscape_kernel_for_bar(
 
         The "pyramid" mode should reproduce the usual persistence landscape
         shape when f ≡ 1.
+
+        Parameters
+        ----------
+        forest :
+            Forest-like object with `barcode`.
+        bar :
+            Bar from the forest barcode.
+        cycle_func : CycleValueFunc
+            Functional used to evaluate each cycle representative.
+        mode : {"raw", "pyramid"}, default "pyramid"
+            Whether to return the raw convolution or the pyramid-rescaled kernel.
+        tol : float, default 1e-12
+            Tolerance forwarded to the convolution helper.
+
+        Returns
+        -------
+        PiecewiseLinearFunction
+            Kernel ready to be sampled on a grid.
         """
         raw_kernel = compute_convolution_kernel_for_bar(
             forest = forest,
@@ -896,6 +1082,11 @@ def compute_generalized_landscape_family(
             Optional fixed grid on which to evaluate the landscapes.
         cache:
             Decides if landscapes is saved to forest or only returned.
+
+        Returns
+        -------
+        GeneralizedLandscapeFamily
+            Collection of per-bar kernels and λ_k landscapes on the shared grid.
         """
         if not hasattr(forest, "barcode"):
             raise AttributeError("LoopForest has no 'barcode' attribute. Did you compute it?")
@@ -1012,6 +1203,27 @@ def plot_landscape_family(
         ax: Optional["matplotlib.axes.Axes"] = None,
         title: Optional[str] = None,
     ):
+    """
+    Plot selected landscapes λ_k from a stored family on a given forest.
+
+    Parameters
+    ----------
+    forest :
+        Forest-like object carrying `landscape_families`.
+    label : str
+        Key of the desired family inside `forest.landscape_families`.
+    ks : list of int, optional
+        Which landscape levels to plot; defaults to all available.
+    ax : matplotlib.axes.Axes, optional
+        Axis to draw on; a new one is created if omitted.
+    title : str, optional
+        Custom plot title.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axis containing the plot.
+    """
 
     if not hasattr(forest, "landscape_families"):
         raise AttributeError("No landscape_families attribute on this LoopForest")
@@ -1044,6 +1256,27 @@ def plot_landscape_comparison_between_functionals(forest,
     ax: Optional["matplotlib.axes.Axes"] = None,
     title: Optional[str] = None,
 ):
+    """
+    Compare the k-th landscape across multiple functionals on a single forest.
+
+    Parameters
+    ----------
+    forest :
+        Forest-like object carrying `landscape_families`.
+    labels : list of str
+        Names of the families/functionals to compare.
+    k : int, default 1
+        Landscape level to plot.
+    ax : matplotlib.axes.Axes, optional
+        Axis to draw on; a new one is created if omitted.
+    title : str, optional
+        Custom plot title.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axis containing the comparison plot.
+    """
 
     if not hasattr(forest, "landscape_families"):
         raise AttributeError(f"No landscape_families attribute on {forest}")
@@ -1078,6 +1311,29 @@ def plot_landscape_comparison(
     forest_labels: Optional[List[str]] = None,
     title: Optional[str] = None,
 ):
+    """
+    Compare the k-th landscape across multiple forests for a single functional.
+
+    Parameters
+    ----------
+    forests : list
+        Forest-like objects that have `landscape_families`.
+    label : str
+        Family/functional name to extract from each forest.
+    k : int, default 1
+        Landscape level to plot.
+    ax : matplotlib.axes.Axes, optional
+        Axis to draw on; a new one is created if omitted.
+    forest_labels : list of str, optional
+        Labels to use in the legend; defaults to each family's `forest_id`.
+    title : str, optional
+        Custom plot title.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axis containing the comparison plot.
+    """
     for forest in forests:
         if not hasattr(forest, "landscape_families"):
             raise AttributeError(f"No landscape_families attribute on {forest}")

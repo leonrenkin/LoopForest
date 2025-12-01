@@ -9,6 +9,7 @@ from matplotlib import colors as mcolors
 # ======================
 
 def _to_hex(c):
+    """Convert a Matplotlib color or RGB tuple to hex string."""
     if isinstance(c, str):
         return mcolors.to_hex(mcolors.to_rgb(c))
     return mcolors.to_hex(c)
@@ -16,13 +17,16 @@ def _to_hex(c):
 
 
 def _mix(rgb1, rgb2, t):
+    """Linear interpolation between two RGB colors."""
     return tuple((1 - t) * a + t * b for a, b in zip(rgb1, rgb2))
 
 def _luminance(rgb):
+    """Approximate perceived luminance of an RGB triple in [0,1]."""
     r, g, b = rgb
     return 0.2126*r + 0.7152*g + 0.0722*b
 
 def _hue_shift(rgb, delta_h):
+    """Shift hue of an RGB triple by delta_h (in HSV hue space)."""
     h, s, v = mcolors.rgb_to_hsv(rgb)
     h = (h + delta_h) % 1.0
     return tuple(mcolors.hsv_to_rgb((h, s, v)))
@@ -33,16 +37,19 @@ def _hue_shift(rgb, delta_h):
 _Xn, _Yn, _Zn = 0.95047, 1.00000, 1.08883
 
 def _srgb_to_linear(c):
+    """Convert sRGB channel(s) in [0,1] to linear RGB."""
     # c in [0,1]
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 
 def _f_lab(t):
+    """CIE Lab helper f(t) used in XYZ-to-Lab conversion."""
     # CIE standard helper
     delta = 6/29
     return np.where(t > delta**3, np.cbrt(t), t/(3*delta**2) + 4/29)
    
 
 def _rgb_to_xyz(rgb):
+    """Convert an RGB triple in [0,1] to XYZ (D65)."""
     # rgb in [0,1], sRGB, D65
     r, g, b = _srgb_to_linear(np.array(rgb))
     X = 0.4124564*r + 0.3575761*g + 0.1804375*b
@@ -53,6 +60,7 @@ def _rgb_to_xyz(rgb):
 
     
 def _rgb_to_lab(rgb):
+    """Convert an RGB triple in [0,1] to Lab (D65)."""
     X, Y, Z = _rgb_to_xyz(rgb)
     fx, fy, fz = _f_lab(X/_Xn), _f_lab(Y/_Yn), _f_lab(Z/_Zn)
     L = 116*fy - 16
@@ -63,7 +71,7 @@ def _rgb_to_lab(rgb):
     
 
 def _lab_distance(lab1, lab2):
-    # ΔE*76
+    """Compute delta-E 76 distance between two Lab vectors."""
     d = lab1 - lab2
     return float(np.sqrt(np.dot(d, d)))
  
@@ -72,7 +80,7 @@ def _lab_distance(lab1, lab2):
 # ======================
 
 def _hue_sequence(n: int, start: float) -> Iterable[float]:
-    """Golden-ratio hue stepping for uniform coverage."""
+    """Yield n hues spaced by the golden ratio to cover HSV space uniformly."""
     phi = 0.61803398875
     h = start
     for _ in range(n):
@@ -87,7 +95,25 @@ def _generate_candidates(
     L_bounds: Sequence[float] = (30.0, 92.0),  # keep mid/bright; avoid near-black/white
 ) -> List[tuple]:
     """
-    Returns a list of (hex, lab) candidate colors.
+    Generate candidate colors in HSV, convert to hex/Lab, and filter by lightness.
+
+    Parameters
+    ----------
+    num_hues : int
+        Number of hue samples (via golden stepping).
+    sats : Sequence[float]
+        Saturation levels to combine with each hue.
+    vals : Sequence[float]
+        Value/brightness levels to combine with each hue.
+    hue_start : float
+        Initial hue in [0,1] for the golden sequence.
+    L_bounds : Sequence[float]
+        Inclusive (L_min, L_max) bounds in Lab lightness for keeping candidates.
+
+    Returns
+    -------
+    list[tuple[str, np.ndarray]]
+        List of (hex_color, lab_color) pairs.
     """
     candidates = []
     for h in _hue_sequence(num_hues, hue_start):
@@ -114,10 +140,27 @@ def distinct_base_colors(
     vals: Sequence[float] = (0.80, 0.95),
 ) -> List[str]:
     """
-    Pick n_sets bases by farthest-point sampling in Lab from a large HSV candidate pool.
-    - 'seed' changes the initial pick (and thus the whole selection).
-    - 'prefer_start' (hex or any Matplotlib color) biases the first color near this target.
-    - Adjust num_hues/sats/vals to widen or densify the candidate gamut.
+    Choose base colors by greedy farthest-point sampling in Lab space.
+
+    Parameters
+    ----------
+    n_sets : int
+        Number of base colors to return.
+    seed : int | None, optional
+        Seed controlling candidate ordering and initial pick.
+    prefer_start : str | None, optional
+        Hex/Matplotlib color to bias the first chosen color toward.
+    num_hues : int, optional
+        Number of hues to consider when generating candidates.
+    sats : sequence of float, optional
+        Saturation levels for candidate generation.
+    vals : sequence of float, optional
+        Value/brightness levels for candidate generation.
+
+    Returns
+    -------
+    list[str]
+        Hex color strings for each base color.
     """
     rng = random.Random(seed)
     hue_start = rng.random() if seed is not None else 0.11  # randomize starting phase if seeded
@@ -164,7 +207,27 @@ def variants_for_set(base_hex: str,
                      hue_jitter: float = 0.04,
                      order: str = "light_to_dark") -> List[str]:
     """
-    Ordered similar-but-not-identical colors inside one set.
+    Generate n related colors around a base shade.
+
+    Parameters
+    ----------
+    base_hex : str
+        Base color (hex or Matplotlib-compatible) to vary.
+    n : int
+        Number of variants to produce.
+    tint_strength : float, optional
+        Blend amount toward white for lighter variants.
+    shade_strength : float, optional
+        Blend amount toward black for darker variants.
+    hue_jitter : float, optional
+        Max absolute hue shift applied across the sequence.
+    order : {"light_to_dark","dark_to_light"}, optional
+        Order of returned colors.
+
+    Returns
+    -------
+    list[str]
+        Hex strings for the generated variants.
     """
     base_rgb = mcolors.to_rgb(base_hex)
     L = _luminance(base_rgb)
@@ -204,6 +267,32 @@ def build_color_scheme(set_sizes: Sequence[int],
                        sats: Sequence[float] = (0.65, 0.85, 1.00),
                        vals: Sequence[float] = (0.80, 0.95),
                        max_variants_per_set: int = 20) -> Dict[str, Any]:
+    """
+    Build a full color scheme with base colors and within-set variants.
+
+    Parameters
+    ----------
+    set_sizes : sequence of int
+        Number of colors required for each set.
+    set_ids : sequence of str
+        Identifiers matching each set size.
+    seed : int | None, optional
+        Seed for reproducible base selection.
+    order_within_set : {"light_to_dark","dark_to_light"}, optional
+        Ordering for variants inside each set.
+    prefer_start : str | None, optional
+        Optional color bias for the first base color.
+    num_hues, sats, vals : see ``distinct_base_colors``
+        Parameters controlling candidate generation.
+    max_variants_per_set : int, optional
+        Reserved for future use; currently variants are sized exactly by
+        ``set_sizes``.
+
+    Returns
+    -------
+    dict
+        JSON-serializable scheme containing ``_meta`` and ``sets`` entries.
+    """
     if len(set_sizes) != len(set_ids):
         raise ValueError("set_sizes and set_ids must have the same length")
     bases = distinct_base_colors(
@@ -237,7 +326,7 @@ def build_color_scheme(set_sizes: Sequence[int],
 # -----------------------
 
 def _sid(ob) -> int:
-    # works for np.int32/64, Python int, etc.
+    """Extract a stable set id from an object, casting to int."""
     return int(getattr(ob, "root_id"))
 
 def _stable_sid_key(sid: Any) -> Any:
@@ -262,11 +351,27 @@ def build_scheme_from_bars(
     max_variants_per_set: int = 16,
 ) -> Dict[str, Any]:
     """
-    Build a reusable JSON-friendly scheme straight from bars_set.
+    Build a JSON-friendly color scheme directly from bar-like objects.
 
-    - Groups by ob.color_set
-    - Preserves encounter order per group unless 'order_key' is provided
-    - Returns the scheme (save to JSON for reuse)
+    Parameters
+    ----------
+    bars : iterable
+        Objects exposing ``root_id`` to define their color set.
+    seed : int | None, optional
+        Seed for reproducible base selection.
+    order_within_set : {"light_to_dark","dark_to_light"}, optional
+        Ordering for variants inside each set.
+    prefer_start : str | None, optional
+        Optional bias for the first base color.
+    num_hues, sats, vals : see ``distinct_base_colors``
+        Parameters controlling candidate generation.
+    max_variants_per_set : int, optional
+        Maximum colors generated per set (caps very large groups).
+
+    Returns
+    -------
+    dict
+        Color scheme suitable for JSON serialization, keyed by set id.
     """
     # Group objects by set
     groups: Dict[Any, List] = {}
@@ -300,8 +405,23 @@ def color_map_for_bars(
     by_id: bool = False,
 ) -> Dict[object, str]:
     """
-    Build {ob -> '#RRGGBB'} using an existing scheme.
-    - If objects are unhashable, set by_id=True to return {id(ob) -> color}
+    Build a mapping from bar-like objects to hex colors.
+
+    Parameters
+    ----------
+    bars : iterable
+        Objects exposing ``root_id``; grouping is done by that id.
+    seed : int | None, optional
+        Seed for reproducible scheme generation.
+    prefer_start : str | None, optional
+        Optional bias for the first base color.
+    by_id : bool, optional
+        If True, return {id(obj) -> color} for unhashable objects.
+
+    Returns
+    -------
+    dict
+        Mapping from object (or id) to hex color string.
     """
     scheme = build_scheme_from_bars(
         bars,

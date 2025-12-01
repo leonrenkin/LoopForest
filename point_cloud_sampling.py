@@ -2,16 +2,16 @@ import numpy as np
 
 def sample_noisy_star(n, spikes=5, amplitude=0.5, noise_std=0.01, seed=None, radius = 0.5):
     """
-    Sample n random points from a star-shaped curve in 2D,
-    perturbed by Gaussian noise.
-    
+    Sample noisy points from a smooth star-shaped curve in 2D.
+
     Parameters:
         n (int): Number of points to sample.
         spikes (int): Number of star spikes.
-        amplitude (float): Spike strength (0 = circle).
+        amplitude (float): Spike strength; 0 corresponds to a circle.
         noise_std (float): Std. dev. of Gaussian noise.
         seed (int or None): Random seed.
-    
+        radius (float): Base radius of the star prior to modulation.
+
     Returns:
         np.ndarray: Array of shape (n, 2) with noisy (x, y) points.
     """
@@ -43,15 +43,15 @@ def sample_noisy_star_pointy(
     noise_std=0.02
 ):
     """
-    Sample noisy points along a pointy star boundary.
+    Sample noisy points along the boundary of a star with sharp tips.
 
     Parameters
     ----------
-    n_points : int
+    n : int
         Number of points to sample.
     seed : int
         Random seed for reproducibility.
-    n_arms : int
+    spikes : int
         Number of arms/spikes of the star.
     r_outer : float
         Radius of the outer tips.
@@ -62,8 +62,8 @@ def sample_noisy_star_pointy(
 
     Returns
     -------
-    points : ndarray, shape (n_points, 2)
-        2D array of sampled star points.
+    points : ndarray, shape (n, 2)
+        2D array of sampled star boundary points.
     """
 
     rng = np.random.default_rng(seed)
@@ -121,13 +121,13 @@ def sample_noisy_star_pointy(
 
 def sample_noisy_circle(n, noise_std=0.05, seed=42, radius: float = 1):
     """
-    Sample n random points on a circle with diameter 1,
-    perturbed by Gaussian noise.
+    Sample noisy points along a circle of the given radius.
     
     Parameters:
         n (int): Number of points to sample.
         noise_std (float): Standard deviation of Gaussian noise.
         seed (int or None): Random seed for reproducibility.
+        radius (float): Circle radius.
     
     Returns:
         np.ndarray: Array of shape (n, 2) with noisy (x, y) points.
@@ -271,7 +271,7 @@ def sample_noisy_circle_with_tendril(
 
 def sample_uniform_points(n, dim, seed=15):
     """
-    Sample n uniformly distributed points in d dimensions.
+    Sample n uniformly distributed points in a unit hypercube.
 
     Parameters
     ----------
@@ -285,7 +285,7 @@ def sample_uniform_points(n, dim, seed=15):
     Returns
     -------
     np.ndarray
-        An array of shape (n, d) with uniformly sampled points in [0, 1]^d.
+        An array of shape (n, dim) with uniformly sampled points in [0, 1]^dim.
     """
     rng = np.random.default_rng(seed)
     return rng.random((n, dim))
@@ -299,15 +299,14 @@ def sample_points_without_balls(
     max_trials_factor=1000,
 ):
     """
-    Sample n uniformly distributed points in [0,1]^d that do NOT fall inside a set of
-    randomly sampled balls (hyperspheres) contained in [0,1]^d.
+    Sample points in [0,1]^dim while avoiding randomly placed balls.
 
     Parameters
     ----------
     n : int
         Number of points to sample (outside the balls).
     dim : int
-        Dimension of the space (unit hypercube [0,1]^d).
+        Dimension of the space (unit hypercube [0,1]^dim).
     num_discs : int
         Number of balls (hyperspheres) to sample.
     radius_range : tuple or list of length 2
@@ -321,8 +320,8 @@ def sample_points_without_balls(
 
     Returns
     -------
-    points : np.ndarray, shape (n, d)
-        Uniform points in [0,1]^d excluding the sampled balls.
+    points : np.ndarray, shape (n, dim)
+        Uniform points in [0,1]^dim excluding the sampled balls.
 
     Raises
     ------
@@ -391,20 +390,20 @@ def sample_points_without_balls(
 
 def sample_unit_sphere(n: int, dim: int, seed: int | None = 23) -> np.ndarray:
     """
-    Sample n points uniformly from the unit sphere S^{d-1} in R^d.
+    Sample n points uniformly from the unit sphere S^{dim-1} in R^dim.
 
     Parameters
     ----------
     n : int
         Number of points to sample.
-    d : int
-        Dimension of the ambient space R^d.
+    dim : int
+        Dimension of the ambient space R^dim.
     seed : int or None
         Seed for reproducibility.
 
     Returns
     -------
-    points : (n, d) np.ndarray
+    points : (n, dim) np.ndarray
         Array of n points on the unit sphere.
     """
     rng = np.random.default_rng(seed)
@@ -421,15 +420,15 @@ def sample_noisy_sphere(
     seed: int | None = None
 ) -> np.ndarray:
     """
-    Sample n points from the d-dimensional unit sphere and 
+    Sample n points from the dim-dimensional unit sphere and 
     perturb them with Gaussian noise N(0, noise_std^2 I).
 
     Parameters
     ----------
     n : int
         Number of points to sample.
-    d : int
-        Dimension of the ambient space R^d.
+    dim : int
+        Dimension of the ambient space R^dim.
     noise_std : float
         Standard deviation of Gaussian noise.
     seed : int or None
@@ -437,7 +436,7 @@ def sample_noisy_sphere(
 
     Returns
     -------
-    noisy_points : (n, d) np.ndarray
+    noisy_points : (n, dim) np.ndarray
         Noisy points.
     """
     rng = np.random.default_rng(seed)

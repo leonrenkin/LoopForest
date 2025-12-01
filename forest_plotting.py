@@ -66,11 +66,12 @@ def _plot_barcode_generic(
         Plot title.
     xlabel : str
         Label for the x-axis.
-    coloring : {"forest","bars"}
+    coloring : {"forest","bars","none","grey"}
         Which color scheme to use:
         - "forest": use forest.color_map_forest (tree-structured colors).
         - "bars":   use forest.color_map_bars (ignores tree structure).
-        - "none":   all bars in same color
+        - "none":   all bars share matplotlib defaults.
+        - "grey":   force a uniform grey.
         If the chosen color map does not exist yet, it is built as in
         `plot_at_filtration`.
     max_bars : int
@@ -241,6 +242,36 @@ def _plot_dendrogram_generic(
         small_on_top: bool = False,
         threshold: float = 0.0,
     ):
+    """
+    Plot a dendrogram-style view of a LoopForest where y = filtration value.
+
+    Parameters
+    ----------
+    forest : LoopForest
+        Forest containing nodes with `filt_val`, `parent`, `children`, and `id`.
+    ax : matplotlib.axes.Axes | None
+        Axes to draw on. If None, a new figure/axes is created.
+    show : bool, optional
+        If True (default) call ``plt.show`` after plotting.
+    annotate_ids : bool, optional
+        If True, annotate each node with its integer id.
+    leaf_spacing : float, optional
+        Horizontal spacing between consecutive leaves.
+    tree_gap_leaves : int, optional
+        Additional empty leaf slots inserted between separate trees.
+    check_reduced : bool, optional
+        If True, warn if any parent and child share the same filtration value.
+    small_on_top : bool, optional
+        If True, invert the y-axis so smaller filtration values appear on top.
+    threshold : float, optional
+        Minimum vertical span (root vs. leaves) required to keep a tree;
+        trees with max_leaf_delta <= threshold are omitted.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The axes on which the dendrogram was drawn.
+    """
     import warnings
 
     if not forest.nodes:
@@ -439,16 +470,21 @@ def _animate_filtration_generic(
         barcode_kwargs: Optional[dict] = None,
     ):
         """
-        Create an animation of the loop forest over the filtration.
+        Create an animation of a LoopForest across its filtration values.
 
         Parameters
         ----------
+        forest : LoopForest
+            Forest exposing ``filtration``, ``barcode``, and ``plot_at_filtration``.
         filename : str | None, optional
             If given, the animation is written to this path.
         fps : int, optional
             Frames per second for the saved animation.
         frames : int, optional
-            Number of time steps (frames) sampled between t_min and t_max.
+            Number of time steps (frames) sampled between ``t_min`` and ``t_max``.
+        coloring : {"forest","bars"}, optional
+            Which color scheme to apply consistently to both the cloud panel and
+            barcode panel.
         with_barcode : bool, optional
             If True, show a second panel with the barcode and a moving vertical
             line indicating the current filtration value.
@@ -457,13 +493,13 @@ def _animate_filtration_generic(
         dpi : int, optional
             DPI for saving the animation.
         cloud_figsize : (float, float), optional
-            Size of the point-cloud panel when with_barcode=False.
+            Size of the point-cloud panel when ``with_barcode=False``.
         total_figsize : (float, float) | None, optional
-            Total figure size when with_barcode=True. If None, a reasonable
+            Total figure size when ``with_barcode=True``. If None, a reasonable
             default (10, 5) is used.
         plot_kwargs : dict | None, optional
             Extra keyword arguments forwarded to ``plot_at_filtration``.
-            For example::
+            Example::
                 plot_kwargs=dict(
                     fill_triangles=True,
                     loop_vertex_markers=False,
@@ -473,7 +509,7 @@ def _animate_filtration_generic(
         barcode_kwargs : dict | None, optional
             Extra keyword arguments forwarded to ``_plot_barcode`` **except**
             ``ax`` and ``coloring``, which are managed by this method.
-            For example::
+            Example::
                 barcode_kwargs=dict(
                     max_bars=150,
                     min_bar_length=1e-3,
@@ -853,5 +889,3 @@ def animate_filtration_pair(
             anim.save(fname, dpi=dpi, fps=fps)
 
     return anim, fig
-
-

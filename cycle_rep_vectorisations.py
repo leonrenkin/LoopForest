@@ -6,7 +6,26 @@ import numpy as np
 _EPS = 1e-12
 
 def _to_xy(points: Iterable[Tuple[float, float]]) -> np.ndarray:
-    """Convert input to an (N,2) float64 array and drop duplicated last=first."""
+    """
+    Convert input points to an ``(N, 2)`` float64 array, dropping a duplicated
+    closing point when the first and last coordinates coincide.
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Polygon vertices in order; a trailing copy of the first vertex is
+        tolerated and removed.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape ``(N, 2)`` with dtype float64.
+
+    Raises
+    ------
+    ValueError
+        If the input cannot be viewed as at least three 2D points.
+    """
     P = np.asarray(points, dtype=float)
     if P.ndim != 2 or P.shape[1] != 2:
         raise ValueError("points must be an (N,2) array-like of x,y pairs")
@@ -19,6 +38,17 @@ def _to_xy(points: Iterable[Tuple[float, float]]) -> np.ndarray:
 def polygon_length(points: Iterable[Tuple[float, float]]) -> float:
     """
     Perimeter (sum of edge lengths) of the closed polygonal loop.
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Vertices of the polygon; a trailing duplicate of the first point
+        is allowed.
+
+    Returns
+    -------
+    float
+        Total Euclidean length of all edges.
     """
     P = _to_xy(points)
     diffs = np.roll(P, -1, axis=0) - P
@@ -26,7 +56,20 @@ def polygon_length(points: Iterable[Tuple[float, float]]) -> float:
 
 def polygon_area(points: Iterable[Tuple[float, float]], signed: bool = False) -> float:
     """
-    Shoelace area of the polygon. Positive for CCW, negative for CW (if signed=True).
+    Shoelace area of the polygon; optionally return the signed value.
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Vertices of the polygon; a trailing duplicate of the first point
+        is allowed.
+    signed : bool, optional
+        If True, return the signed area (CCW positive, CW negative).
+
+    Returns
+    -------
+    float
+        Polygon area (signed or absolute depending on ``signed``).
     """
     P = _to_xy(points)
     x, y = P[:, 0], P[:, 1]
@@ -35,24 +78,95 @@ def polygon_area(points: Iterable[Tuple[float, float]], signed: bool = False) ->
     return a if signed else abs(a)
 
 def polygon_area_length_ratio(points: Iterable[Tuple[float, float]]) -> float:
+    """
+    Area divided by squared perimeter (isoperimetric ratio).
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Polygon vertices.
+
+    Returns
+    -------
+    float
+        ``area / perimeter**2``.
+    """
     return polygon_area(points=points)/(polygon_length(points=points)**2)
 
 def polygon_area_length_squared_ratio(points: Iterable[Tuple[float, float]]) -> float:
+    """
+    Area divided by perimeter.
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Polygon vertices.
+
+    Returns
+    -------
+    float
+        ``area / perimeter``.
+    """
     return polygon_area(points=points)/polygon_length(points=points)
 
 def polygon_length_area_ratio(points: Iterable[Tuple[float, float]], tol = 1e-8) -> float:
+    """
+    Perimeter divided by area; returns 0 when area is below ``tol``.
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Polygon vertices.
+    tol : float, optional
+        If area < ``tol``, return 0 to avoid division by tiny values.
+
+    Returns
+    -------
+    float
+        ``perimeter / area`` or 0 when the area threshold is not met.
+    """
     if polygon_area(points=points) < tol:
         return 0
     else:
         return polygon_length(points=points)/polygon_area(points=points)
 
 def polygon_length_squared_area_ratio_normalized(points: Iterable[Tuple[float, float]], tol = 1e-8) -> float:
+    """
+    Isoperimetric deficit: (perimeter^2 / area) - 4π.
+
+    Returns 0 when area is below ``tol``.
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Polygon vertices.
+    tol : float, optional
+        If area < ``tol``, return 0 to avoid division by tiny values.
+
+    Returns
+    -------
+    float
+        ``perimeter**2 / area - 4π`` or 0 when the area threshold is not met.
+    """
     if polygon_area(points=points) < tol:
         return 0
     else:
         return polygon_length(points=points)**2/polygon_area(points=points) - 4*np.pi
 
 def polygon_length_squared_area_ratio(points: Iterable[Tuple[float, float]]) -> float:
+    """
+    Perimeter squared divided by area (isoperimetric quotient).
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Polygon vertices.
+
+    Returns
+    -------
+    float
+        ``perimeter**2 / area``.
+    """
     return (polygon_length(points=points)**2)/polygon_area(points=points)
 
 def total_curvature(points: Iterable[Tuple[float, float]],
@@ -78,10 +192,8 @@ def total_curvature(points: Iterable[Tuple[float, float]],
     Parameters
     ----------
     points : sequence of (x,y) defining a simple loop (last connects to first).
-    enforce_ccw : bool
-        If True, reverse order when signed area < 0 (purely for the sum check).
-    check : bool
-        If True, verify that sum of signed kappa_i ≈ ±2π (simple closed curve).
+    enforce_ccw : bool, optional
+        Currently kept for API compatibility; orientation is not altered.
 
     Returns
     -------
@@ -118,38 +230,43 @@ def total_curvature(points: Iterable[Tuple[float, float]],
 
 def curvature_excess(points: Iterable[Tuple[float, float]]) -> float:
     """
-    Excess total curvature beyond 2π, scaled by 2π:
-        CE = K_total / (2π) - 1
-    CE ≈ 0 for convex shapes (including circle-like); CE > 0 for star-shaped/non-convex.
+    Normalized excess curvature: (total_curvature / 2π) - 1.
+
+    Returns 0 for a convex loop (total curvature ≈ 2π) and positive values
+    for star-shaped or non-convex loops.
+
+    Parameters
+    ----------
+    points : iterable of (float, float)
+        Polygon vertices.
+
+    Returns
+    -------
+    float
+        Excess curvature normalized by 2π.
     """
     K = total_curvature(points, enforce_ccw=True)
     return K *(1.0/ (2*math.pi) )- 1.0
 
 def signed_chain_edge_length(signed_chain, point_cloud: NDArray[np.float64]) -> float:
     """
-    CycleValueFunc for signed chains: total edge length.
+    Sum of Euclidean lengths of all 1-simplices in a signed chain.
 
     Parameters
     ----------
-    rep
-        A SignedChain-like object with an attribute
-            rep.signed_simplices : iterable of (simplex, sign)
-        where `simplex` is an iterable of vertex indices (e.g. (i, j)),
-        and `sign` is typically ±1 (orientation).
-    point_cloud : np.ndarray, shape (n_points, dim)
-        Ambient point cloud.
+    signed_chain
+        Object exposing ``signed_simplices`` that yields (simplex, sign) pairs.
+        Only simplices with two vertices (edges) contribute.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
 
     Returns
     -------
-    float
-        Sum of Euclidean lengths of all 1-simplices in the chain.
+    float: Total edge length (orientation ignored).
 
     Notes
     -----
-    - Only simplices of length 2 (edges) are used.
-    - The sign is ignored in the magnitude (we use abs(sign)), so this is
-      "unsigned total length". If you want oriented total length, replace
-      `abs(sign)` by `sign`.
+    Signs/orientations are ignored; the chain is treated as unsigned for length.
     """
     total = 0.0
 
@@ -163,23 +280,85 @@ def signed_chain_edge_length(signed_chain, point_cloud: NDArray[np.float64]) -> 
         p1 = point_cloud[verts_idx[1]]
         length = float(np.linalg.norm(p1 - p0))
 
-        # Use abs(sign) so orientation doesn't cancel length
+        # Orientation/sign is ignored; we just accumulate edge lengths.
         total += length
 
     return total
 
 def constant_one_functional(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Return the constant value 1; useful as a trivial chain functional.
+
+    Parameters
+    ----------
+    signed_chain
+        Unused; present for signature compatibility.
+    point_cloud : np.ndarray
+        Unused; present for signature compatibility.
+
+    Returns
+    -------
+    int
+        Always 1.
+    """
     return 1
 
 def signed_chain_connected_components(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Number of disjoint polyhedral paths in the signed chain.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)``.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    int
+        Count of connected components.
+    """
     return len( signed_chain.polyhedral_paths(point_cloud) )
 
 def signed_chain_excess_connected_components(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Number of components minus one; zero when the chain is connected.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)``.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    int
+        Components count minus one.
+    """
     return len( signed_chain.polyhedral_paths(point_cloud) ) - 1
 
 def signed_chain_area(signed_chain, point_cloud:  NDArray[np.float64]) -> float:
     """
-    Compute Area by taking area of outer circle minus area of inner circles
+    Area enclosed by a chain with possible holes.
+
+    Assumes exactly one outer boundary and any number of inner boundaries.
+    The path whose x-coordinate attains the global maximum is treated as the
+    outer boundary; its area is added while all others are subtracted.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)`` that yield index
+        sequences for polygon boundaries.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    float
+        Signed area of the chain (outer minus inner regions).
     """
 
     paths = list( signed_chain.polyhedral_paths(point_cloud) )
@@ -199,7 +378,21 @@ def signed_chain_area(signed_chain, point_cloud:  NDArray[np.float64]) -> float:
     return total_area
 
 def signed_chain_excess_curvature(signed_chain, point_cloud: NDArray[np.float64]) -> float:
-    """Sums excess curvature of polyhedral paths"""
+    """
+    Sum of ``curvature_excess`` over every polyhedral path in the chain.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)``.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    float
+        Total excess curvature across all paths.
+    """
     paths = list( signed_chain.polyhedral_paths(point_cloud) )
     total = 0
     for path in paths:
