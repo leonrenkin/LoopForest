@@ -93,7 +93,6 @@ def _make_samplers() -> Dict[str, Sampler]:
         "uniform_3D": lambda n, seed: sample_uniform_points(n,dim=3, seed=seed),
         "uniform_2D_with_30holes_radius-max-dot05": lambda n, seed: sample_points_without_balls(n=n,dim=2,seed=seed,radius_range=[0,0.5],num_discs=30),
         "uniform_3D_with_30holes_radius-max-dot05": lambda n, seed: sample_points_without_balls(n=n,dim=3,seed=seed,radius_range=[0,0.5],num_discs=30)
-
     }
 
 
