@@ -6,7 +6,7 @@ from PersistenceForest import PersistenceForest
 import seaborn as sns
 
 plt.rcParams.update({
-    "text.usetex": False,
+    "text.usetex": True,
     "font.family": "sans-serif",
     "font.size": 6,
 })
@@ -243,4 +243,38 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
 
 fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
 plt.show()
+
+# %%
+def sample_four_leaf_clover(n, r=1.0, noise=0.0, R = (0, 2*np.pi)):
+    t = np.random.uniform(R[0], R[1], n)
+    p = (r * np.sin(2*t))[:, None] * np.column_stack((np.cos(t), np.sin(t)))
+    return p + np.random.normal(0, noise, p.shape)
+np.random.seed(6)
+pts = np.vstack([
+    sample_four_leaf_clover(30, noise=0.01, R = (0, .5*np.pi)),
+    .7*sample_four_leaf_clover(40, noise=0.01, R = (.5*np.pi, np.pi)),
+    1.5*sample_four_leaf_clover(60, noise=0.01, R = (1.5*np.pi, 2*np.pi)),
+    2.5*sample_four_leaf_clover(50, noise=0.01, R = (np.pi, 1.5*np.pi)),
+])
+pts = pts[np.linalg.norm(pts, axis=1) > 0.25]
+forest = LoopForest(pts)
+landscapes = forest.compute_generalized_landscape_family(polygon_length_squared_area_ratio_normalized)
+fig, axs = plt.subplot_mosaic([['points', 'barcode'], ['points', 'landscapes']], figsize=(3,1), width_ratios = [2, 5])
+axs['points'].set_aspect('equal')
+axs['points'].scatter(*pts.T, s=1, color='black')
+axs['points'].set_axis_off()
+bars = sorted(forest.barcode, key=lambda b: b.death - b.birth)[-30:]
+for (i, bar) in enumerate(bars):
+    axs['barcode'].plot([bar.birth, bar.death], [i,i], lw=1, color='black')
+axs['barcode'].set_yticks([])
+axs['barcode'].set_xticks([])
+for (k, l) in enumerate(list(landscapes.landscapes.values())[:2]):
+    axs['landscapes'].plot(l.xs, l.ys, label=f"{k+1}")
+# axs['landscapes'].set_axis_off()
+axs['landscapes'].set_yticks([])
+axs['landscapes'].sharex(axs['barcode'])
+axs['landscapes'].legend(loc='upper left', frameon=False)
+fig.tight_layout(pad=0.0)
+fig.savefig("paper_figures/four_leaf_clover_landscapes.pdf", dpi=300, transparent=True)
+
 # %%
