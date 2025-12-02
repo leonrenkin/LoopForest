@@ -1205,8 +1205,9 @@ class PersistenceForest:
         point_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
-        loop_edge_arrows: bool = False,
+        show_orientation_arrows: bool = False,
         remove_double_edges: bool = False,
+        show_cycles: bool = True
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -1242,6 +1243,8 @@ class PersistenceForest:
         remove_double_edges : bool
             If True, cancel edges appearing with opposite orientations before
             plotting.
+        show_cycles : bool
+            If True, overlay the active cycles at the filtration value.
 
         Returns
         -------
@@ -1301,60 +1304,61 @@ class PersistenceForest:
         
 
         # --- Overlay loops from active nodes at filt_val
-        for bar in self.barcode:
-            if filt_val>=bar.birth and filt_val<bar.death:
+        if show_cycles:
+            for bar in self.barcode:
+                if filt_val>=bar.birth and filt_val<bar.death:
 
-                cycle = bar.cycle_at_filtration_value(filt_val=filt_val)    
+                    cycle = bar.cycle_at_filtration_value(filt_val=filt_val)    
 
-                # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-                if remove_double_edges:
-                    segments = cycle.without_double_edges().segments(point_cloud=self.point_cloud)
-                else:
-                    segments = cycle.segments(point_cloud=self.point_cloud)
+                    # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
+                    if remove_double_edges:
+                        segments = cycle.without_double_edges().segments(point_cloud=self.point_cloud)
+                    else:
+                        segments = cycle.segments(point_cloud=self.point_cloud)
 
-                # Thicker colored edges along the loop
-                loop_coll = LineCollection(segments, linewidths=0.8, colors=[color_map[bar]], zorder=5)
-                ax.add_collection(loop_coll)
+                    # Thicker colored edges along the loop
+                    loop_coll = LineCollection(segments, linewidths=0.8, colors=[color_map[bar]], zorder=5)
+                    ax.add_collection(loop_coll)
 
-                # Optional arrows to show loop edge orientation
-                if loop_edge_arrows:
-                    for seg in segments:
-                        # seg is a 2x2 array: [start, end]
-                        (x0, y0), (x1, y1) = np.asarray(seg, dtype=float)
+                    # Optional arrows to show loop edge orientation
+                    if show_orientation_arrows:
+                        for seg in segments:
+                            # seg is a 2x2 array: [start, end]
+                            (x0, y0), (x1, y1) = np.asarray(seg, dtype=float)
 
-                        dx = x1 - x0
-                        dy = y1 - y0
-                        length = float(np.hypot(dx, dy))
-                        if length == 0.0:
-                            continue  # skip degenerate segments
+                            dx = x1 - x0
+                            dy = y1 - y0
+                            length = float(np.hypot(dx, dy))
+                            if length == 0.0:
+                                continue  # skip degenerate segments
 
-                        # Place arrow around the middle of the segment, slightly shortened
-                        frac = 0.5  # fraction of the segment length used for the arrow body
-                        mx = 0.5 * (x0 + x1)
-                        my = 0.5 * (y0 + y1)
+                            # Place arrow around the middle of the segment, slightly shortened
+                            frac = 0.5  # fraction of the segment length used for the arrow body
+                            mx = 0.5 * (x0 + x1)
+                            my = 0.5 * (y0 + y1)
 
-                        # Direction unit vector
-                        ux = dx / length
-                        uy = dy / length
+                            # Direction unit vector
+                            ux = dx / length
+                            uy = dy / length
 
-                        half = 0.5 * frac * length
-                        x_start = mx - ux * half
-                        y_start = my - uy * half
-                        x_end   = mx + ux * half
-                        y_end   = my + uy * half
+                            half = 0.5 * frac * length
+                            x_start = mx - ux * half
+                            y_start = my - uy * half
+                            x_end   = mx + ux * half
+                            y_end   = my + uy * half
 
-                        ax.annotate(
-                            "",
-                            xy=(x_end, y_end),
-                            xytext=(x_start, y_start),
-                            arrowprops=dict(
-                                arrowstyle="-|>",
-                                linewidth=.2,
-                                color=color_map[bar],
-                                mutation_scale=6
-                            ),
-                            zorder=6,
-                    )
+                            ax.annotate(
+                                "",
+                                xy=(x_end, y_end),
+                                xytext=(x_start, y_start),
+                                arrowprops=dict(
+                                    arrowstyle="-|>",
+                                    linewidth=.2,
+                                    color=color_map[bar],
+                                    mutation_scale=6
+                                ),
+                                zorder=6,
+                        )
 
         # --- Aesthetics
         ax.set_aspect("equal", adjustable="box")

@@ -6,7 +6,7 @@ animations/
 generalized_landscape_plots/
 plots/
 Sergio_Datasets/
-point_cloud_csvs/
+point_cloud_csvs/line_in_circle.csv
 minimal_delauney_cycles_old.ipynb
 Sergio_Cycle_rep.ipynb
 .DS_Store

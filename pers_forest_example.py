@@ -49,7 +49,7 @@ pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landsc
 # %%
 from cycle_rep_vectorisations import signed_chain_excess_connected_components, signed_chain_area, signed_chain_connected_components, signed_chain_connected_components, signed_chain_excess_connected_components
 
-double_edge_cloud = np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
+double_edge_cloud = np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
 double_edge_forest.plot_at_filtration(15,loop_edge_arrows=True)

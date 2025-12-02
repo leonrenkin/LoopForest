@@ -26,18 +26,53 @@ plt.rcParams.update({
 !mkdir -p paper_figures
 
 # %%
-double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
+
+import os
+os.environ["PATH"] = "/Library/TeX/texbin:" + os.environ["PATH"]
+
+#%%
+double_edge_cloud =np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1)
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
-fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (3,1))
-double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, loop_edge_arrows=True, title="Signed Cycle",show=False)
-double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, loop_edge_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
+double_edge_cloud_disconnected = np.concatenate((double_edge_cloud[:1], double_edge_cloud[2:]))
+double_edge_forest_disconnected = PersistenceForest( point_cloud=double_edge_cloud_disconnected )
+
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (4,1.5))
+double_edge_forest_disconnected.plot_at_filtration(ax = axes[0], filt_val=0.15, show_orientation_arrows=True, title="Signed Cycle",show=False, show_cycles=False)
+double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, show_orientation_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False, show_cycles=False)
 axes[0].axis('off')
 axes[1].axis('off')
 axes[0].set_title(None)
 axes[1].set_title(None)
 fig.tight_layout(pad=0.1)
-fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=True)
+label_offset = 0.05  # reserve space below axes for labels without shrinking the axes
+label_size = plt.rcParams.get("axes.labelsize", plt.rcParams.get("font.size", 8))
+font_family = plt.rcParams.get("font.family", None)
+if isinstance(font_family, (list, tuple)):
+    font_family = font_family[0]
+for ax, label in zip(axes, (fr"$X$", fr"$Y$")):
+    pos = ax.get_position()
+    fig.text(
+        pos.x0 + pos.width / 2,
+        pos.y0 - label_offset,
+        label,
+        ha="center",
+        va="top",
+        fontsize=label_size
+    )
+fig.savefig(f"paper_figures/different_spaces_with_same_cycles.pdf", dpi=300, transparent=True, bbox_inches='tight', pad_inches=0.02)
+plt.show()
+# %%
+
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (4,1.5))
+double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, show_orientation_arrows=True, title="Signed Cycle",show=False)
+double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, show_orientation_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
+axes[0].axis('off')
+axes[1].axis('off')
+axes[0].set_title(None)
+axes[1].set_title(None)
+fig.tight_layout(pad=0.1)
+fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=True,bbox_inches='tight', pad_inches=0.02)
 plt.show()
 
 
@@ -45,8 +80,8 @@ plt.show()
 from cycle_rep_vectorisations import signed_chain_excess_connected_components
 from forest_landscapes import plot_landscape_comparison
 
-connected_islands_cloud = np.loadtxt("circle_with_connected_inner_islands.csv",  delimiter=",", skiprows=1) *100
-disconnected_islands_cloud = connected_islands_cloud[:-7]
+connected_islands_cloud = np.loadtxt("point_cloud_csvs/circle_with_connected_inner_islands.csv",  delimiter=",", skiprows=1) *100
+disconnected_islands_cloud = connected_islands_cloud[:-7]  #remove points to disconnect inner islands
 
 connected_islands_forest = PersistenceForest( connected_islands_cloud )
 disconnected_islands_forest= PersistenceForest( disconnected_islands_cloud )
@@ -89,8 +124,8 @@ fig.savefig('paper_figures/signed_chains_for_conconnected_components1.pdf', tran
 # %%
 fig, axes = plt.subplots(ncols=2,nrows=2,figsize = (3,1.5), sharex='col', sharey='row', layout='constrained')
 for i, forest in enumerate(forests):
-    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,0], signed=False, title = "unsigned", label = forest_labels[i], show_baseline = False, x_range = [0,40], lw=1, zorder=10, clip_on=False)
-    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,1], signed=True, title = "signed", label = forest_labels[i], show_baseline = False, x_range = [0,40], lw=1, zorder=10, clip_on=False)
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,0], signed=False, title = "unsigned", label = forest_labels[i], show_baseline = False, x_range = (0,40), lw=1, zorder=10, clip_on=False)
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,1], signed=True, title = "signed", label = forest_labels[i], show_baseline = False, x_range = (0,40), lw=1, zorder=10, clip_on=False)
 for i in range(2):
     # axes[0, i].set_box_aspect(1)
     axes[0, i].set_ylim([0,4])
@@ -111,10 +146,10 @@ for axs in axes:
         ax.grid(False)
 
 axes[0,0].legend()
-axes[0,0].set_ylabel(r"$f \circ \gamma$")
-axes[1,0].set_ylabel(r"$\lambda_1(-, f)$")
+axes[0,0].set_ylabel(fr"$f \circ \gamma$")
+axes[1,0].set_ylabel(fr"$\lambda_1(-, f)$")
 fig.align_ylabels()
-fig.supylabel(r"$f$ = excess \# conn.\ cpts.")
+fig.supylabel(fr"$f$ = excess \# conn.\ cpts.")
 
 fig.tight_layout(h_pad=2, w_pad=.5)
 fig.savefig('paper_figures/signed_chains_for_conconnected_components.pdf', transparent=True, dpi=300, bbox_inches='tight')
@@ -127,20 +162,20 @@ rng = np.random.default_rng(35)
 num_points=300
 points = rng.uniform(low=0.0, high=2*np.pi, size=num_points)
 points = np.sqrt(np.abs(np.cos(1.5*points))+.1)[:,None] * np.column_stack((np.cos(points), np.sin(points))) + rng.normal(scale=0.05, size=(num_points,2))
-loop_forest = LoopForest(points, print_info=True)
+pers_forest = PersistenceForest(points, print_info=True)
 
 #change start color for loop forest - you can pick a color of your choosing here
 #this color map will be used in all consecutive plots for this forest
-loop_forest._build_color_map_forest(start_color="#5ace2c")
+pers_forest._build_color_map_forest(start_color="#5ace2c")
 
-alpha_max = max(v for (_,v) in loop_forest.filtration)
+alpha_max = max(v for (_,v) in pers_forest.filtration)
 N = 3
 fig, axs = plt.subplots(1, N, sharey=True, figsize=(N*1.5,1.25))
 for k in range(0,N):
     axs[k].axis('off')
     axs[k].set_xticks([])
     axs[k].set_yticks([])
-    loop_forest.plot_at_filtration_with_dual(.5+.25*k, ax=axs[k], dual_vertex_size=1.5, point_size=1.5)
+    pers_forest.plot_at_filtration_with_dual(.5+.25*k, ax=axs[k], dual_vertex_size=1.5, point_size=1.5)
     axs[k].set_title(None)
     if k > 0:
         fig.text((k)/N, 0.5, "$\subseteq$")
@@ -205,7 +240,7 @@ use_signed = False
 
 for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     for j,(name, forest) in enumerate(name_forest_list):
-        forest.plot_barcode_measurement(cycle_func=cycle_func, ax = axes[0, i], signed=use_signed, label = name, show_baseline = False, x_range = [0,7],color = color_palette[j], lw=1)
+        forest.plot_barcode_measurement(cycle_func=cycle_func, ax = axes[0, i], signed=use_signed, label = name, show_baseline = False, x_range = (0,7),color = color_palette[j], lw=1)
 
         
     axes[0, i].set_title(func_name)
