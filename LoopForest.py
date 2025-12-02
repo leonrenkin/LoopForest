@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.axes
 from matplotlib.collections import LineCollection, PolyCollection
+from matplotlib.patches import Polygon
 import time
 import seaborn as sns
 import bisect
@@ -1530,9 +1531,9 @@ class LoopForest:
         fill_triangles: bool = True,
         loop_vertex_markers: bool = False,
         figsize: tuple[float, float] = (7, 7),
-        point_size: float = 3,
+        point_size: float = 1,
         coloring: Literal['forest','bars'] = "forest",
-        dual_vertex_size: float = 16,
+        dual_vertex_size: float = 1,
     ):
         if coloring == "forest":
             if not hasattr(self, "color_map_forest"):
@@ -1616,7 +1617,7 @@ class LoopForest:
             else:
                 dual_edges_future.append(segment)
 
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points", marker="o", ec="none")
 
         if fill_triangles and tris_present:
             tri_coll = PolyCollection(
@@ -1650,8 +1651,8 @@ class LoopForest:
                 present_arr[:, 0],
                 present_arr[:, 1],
                 s=dual_vertex_size,
+                marker = "o",
                 c="C3",
-                marker="o",
                 edgecolors="none",
                 zorder=2.8,
             )
@@ -1659,17 +1660,17 @@ class LoopForest:
         if edges_future:
             future_edge_coll = LineCollection(
                 edges_future,
-                linewidths=0.9,
-                colors="0.45",
-                alpha=0.5,
+                linewidths=0.25,
+                alpha=0.25,
                 zorder=1.6,
+                color='black'
             )
             ax.add_collection(future_edge_coll)
 
         if edges_present:
             edge_coll = LineCollection(
                 edges_present,
-                linewidths=0.9,
+                linewidths=0.35,
                 colors="0",
                 zorder=2,
                 label="edges",
@@ -1680,10 +1681,10 @@ class LoopForest:
             dual_thin_coll = LineCollection(
                 dual_edges_future,
                 colors="C3",
-                linewidths=0.5,
-                alpha=0.5,
-                linestyle="dotted",
-                zorder=3.6,
+                linewidths=0.25,
+                alpha=0.25,
+                # linestyle="dotted",
+                zorder=0,
             )
             ax.add_collection(dual_thin_coll)
 
@@ -1691,7 +1692,7 @@ class LoopForest:
             dual_thick_coll = LineCollection(
                 dual_edges_present,
                 colors="C3",
-                linewidths=0.5,
+                linewidths=0.25,
                 alpha=1,
                 zorder=4,
                 label="dual edges",
@@ -1705,9 +1706,9 @@ class LoopForest:
                 if len(vs) < 2:
                     continue
                 loop_xy = pts[vs]
-                segments = [np.array([loop_xy[i - 1], loop_xy[i]]) for i in range(len(loop_xy))]
-                loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
-                ax.add_collection(loop_coll)
+                segments = np.vstack(loop_xy)
+                loop_coll = Polygon(segments, edgecolor=color_map[bar], facecolor="none", linewidth=1, zorder=5)
+                ax.add_patch(loop_coll)
 
                 if loop_vertex_markers:
                     ax.scatter(

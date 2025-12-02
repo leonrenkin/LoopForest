@@ -1350,14 +1350,14 @@ def plot_landscape_comparison(
         if k not in fam.landscapes:
             continue
         plf = fam.landscapes[k]
-        ax.plot(plf.xs, plf.ys, label=forest_label)
+        ax.plot(plf.xs, plf.ys, label=forest_label, lw=1)
 
     ax.set_xlabel("filtration value")
     ax.set_ylabel(fr"$\lambda_{k}$")
     if title is None:
         title = fr"Comparison of {label} $\lambda_{k}$"
     ax.set_title(title)
-    ax.legend()
+    # ax.legend()
     ax.grid(True, alpha=0.3)
 
     return ax

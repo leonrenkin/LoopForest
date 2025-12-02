@@ -1295,7 +1295,7 @@ class PersistenceForest:
 
         # --- Draw edges
         if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=0.8, colors="0.3", zorder=2, label="edges")
+            edge_coll = LineCollection(edges_xy, linewidths=0.6, colors="0.3", zorder=2, label="edges")
             ax.add_collection(edge_coll)
 
         
@@ -1313,7 +1313,7 @@ class PersistenceForest:
                     segments = cycle.segments(point_cloud=self.point_cloud)
 
                 # Thicker colored edges along the loop
-                loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
+                loop_coll = LineCollection(segments, linewidths=0.8, colors=[color_map[bar]], zorder=5)
                 ax.add_collection(loop_coll)
 
                 # Optional arrows to show loop edge orientation
@@ -1349,9 +1349,9 @@ class PersistenceForest:
                             xytext=(x_start, y_start),
                             arrowprops=dict(
                                 arrowstyle="-|>",
-                                linewidth=1.6,
+                                linewidth=.2,
                                 color=color_map[bar],
-                                mutation_scale=10
+                                mutation_scale=6
                             ),
                             zorder=6,
                     )

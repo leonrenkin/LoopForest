@@ -184,13 +184,13 @@ def _plot_barcode_generic(
 
         color = color_map.get(b, None)
         if coloring == "grey":
-            color = "grey"
+            color = "black"
 
         line_kwargs = {
             "y": i,
             "xmin": x0,
             "xmax": x1 if math.isfinite(x1) else ax.get_xlim()[1] - 0.25 * pad,
-            "linewidth": 3.0,  # thicker bars
+            "linewidth": 1.0,  # thicker bars
         }
         if color is not None:
             line_kwargs["color"] = color

@@ -8,69 +8,24 @@ import seaborn as sns
 plt.rcParams.update({
     "text.usetex": True,
     "font.family": "sans-serif",
+    "text.latex.preamble": r"\usepackage{sfmath}",
     "font.size": 6,
+    "axes.titlesize": 6,
+    "axes.labelsize": 6,
+    "figure.dpi": 300,
 })
 
 # %%
 %load_ext autoreload
 %autoreload 3
 !mkdir -p paper_figures
-
-#%% Example 1: distinguish shapes by their landscapes\
-
-from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril, sample_noisy_star_pointy
-from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
-
-n_points = 1000
-
-circle = sample_noisy_circle(n_points, noise_std=0.02, seed=4, radius = 0.38)*10
-star = sample_noisy_star(n_points, spikes=5, amplitude=0.4,radius=0.62, noise_std=0.02)*10
-star_pointy = sample_noisy_star_pointy(n_points, spikes=7, r_inner=0.4, r_outer=1, noise_std=0.02, seed=42)*10
-ellipse = sample_noisy_ellipse(n_points, a=0.9,b=0.37, noise_std = 0.02)*10
-circle_line = sample_noisy_circle_with_tendril(n_points, radius=0.51, tendril_length=0.3, tendril_fraction=0.05, noise_std=0.02, tendril_width_deg=2, seed=1)*10
-circle_forest = PersistenceForest(circle)
-star_forest = PersistenceForest(star)
-pointy_star_forest = PersistenceForest(star_pointy)
-ellipse_forest = PersistenceForest(ellipse)
-circle_line_forest = PersistenceForest(circle_line)
-
-""" #yrange_dict to make y-axis consistent between plots
-xrange_dict = {(0,0): (-1.25,1.25),
-               (0,1): (0,1),
-               (0,2): (0,1),
-               (0,3): (0,1),
-               (1,1): (0,1.5),
-                (1,2): (0,1.5),
-                (1,3): (0,1.5)}
-yrange_dict = {
-               (0,0): (-1.25,1.25),
-               (0,1): (0, 12),
-               (0,2): (0,  2),
-               (0,3): (0, 35),
-               (1,1): (0, 3),
-               (1,2): (0, .6),
-               (1,3): (0,3)}
-
-column_titles = ["Vol", "EVol", "$K$"]
-
-for name, forest in [("circle", circle_forest), ("ellipse", ellipse_forest), ("circle_line", circle_line_forest), ("star", star_forest), ("pointy_star",pointy_star_forest)]:
-    fig, axes = forest.plot_landscape_subplots(polyhedral_path_funcs=[polygon_length, polygon_area, curvature_excess], 
-                                       yrange_dict=yrange_dict, 
-                                       column_titles=column_titles,
-                                       figsize=(4,2))
-    for key, value in xrange_dict.items():
-        axes[key].set_xlim(value[0], value[1])
-    for key, value in yrange_dict.items():
-        axes[key].set_ylim(value[0], value[1])
-    fig.tight_layout(pad=.0)
-    fig.savefig(f"paper_figures/landscape_{name}.pdf", dpi=300, transparent=True, bbox_inches='tight')
-    plt.show(fig) """
+%matplotlib gtk3
 
 # %%
 double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
-fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (5,2.5))
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (3,1))
 double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, loop_edge_arrows=True, title="Signed Cycle",show=False)
 double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, loop_edge_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
 axes[0].axis('off')
@@ -82,7 +37,7 @@ fig.savefig(f"paper_figures/double_edge_comparison.pdf", dpi=300, transparent=Tr
 plt.show()
 
 
-# %%
+# %% Example: Connected vs Disconnected Islands
 from cycle_rep_vectorisations import signed_chain_excess_connected_components
 from forest_landscapes import plot_landscape_comparison
 
@@ -93,56 +48,57 @@ connected_islands_forest = PersistenceForest( connected_islands_cloud )
 disconnected_islands_forest= PersistenceForest( disconnected_islands_cloud )
 
 forests = [ disconnected_islands_forest,connected_islands_forest]
-forest_labels = ["Disconnected Islands","Connected Islands"]
-labels = ["Unsigned Excess Components","Signed Excess Components"]
+forest_labels = ["disconnected islands","connected islands"]
+labels = ["unsigned excess components","signed excess components"]
 
 for object in forests:
     object.compute_generalized_landscape_family(
         cycle_func=signed_chain_excess_connected_components,
         max_k=6,
         num_grid_points=1000,
-        label="Signed Excess Components",
+        label="signed excess components",
         signed=True)   
 
     object.compute_generalized_landscape_family(
         cycle_func=signed_chain_excess_connected_components,
         max_k=6,
         num_grid_points=1000,
-        label="Unsigned Excess Components",
+        label="unsigned excess components",
         signed=False)   
     
 
 color_palette = sns.color_palette("tab10")
-fig, axes = plt.subplots(ncols=3,nrows=2,figsize = (10,6))
+fig, axes = plt.subplots(ncols=3,nrows=2,figsize = (4,2))
 for i, forest in enumerate(forests):
-    axes[i,0].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=3, color= color_palette[i])
+    axes[i,0].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=.4, color= color_palette[i])
     axes[i,0].set_aspect('equal')
     axes[i,0].set_box_aspect(1)
-    axes[i,0].set_title(forest_labels[i])
+    axes[i,0].axis('off')
+    # axes[i,0].set_title(forest_labels[i])
 
 for i, forest in enumerate(forests):
-    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,1], signed=False, title = "Unsigned Excess Components", label = forest_labels[i], show_baseline = False, x_range = [5,40])
-    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[1,1], signed=True, title = "Signed Excess Components", label = forest_labels[i], show_baseline = False, x_range = [5,40])
-    
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,1], signed=False, title = "unsigned excess components", label = forest_labels[i], show_baseline = False, x_range = [5,40], lw=1)
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[1,1], signed=True, title = "signed excess components", label = forest_labels[i], show_baseline = False, x_range = [5,40], lw=1)
+for i in range(2):
     axes[i,1].set_box_aspect(1)
-    axes[i,1].set_ylim([-4/25,4])
-
-axes[0,1].legend()
-axes[1,1].legend()
+    axes[i,1].set_ylim([0,4])
+    axes[i,1].set_xlim([0,40])
 
 for j, label in enumerate(labels):
-    if label == "Unsigned Excess Components":
-        title = fr"Unsigned Excess Components Landscape $\lambda_1$"
-    else:
-        title = fr"Signed Excess Components Landscape $\lambda_1$"
-    plot_landscape_comparison(forests=forests, forest_labels=forest_labels,label=label, ax=axes[j,2],title=title)
-    axes[j,2].set_xlim([5,40])
-    axes[j,2].set_ylim([-1,25])
+    title = fr"landscape $\lambda_1$"
+    plot_landscape_comparison(forests=forests, label=label, ax=axes[j,2],title=title) #forest_labels=forest_labels,
+    axes[j,2].set_xlim([0,40])
+    axes[j,2].set_ylim([0,20])
     axes[j,2].set_box_aspect(1)
     axes[j,2].set_xlabel(None)
     axes[j,2].set_ylabel(None)
 
+for axs in axes:
+    for ax in axs:
+        ax.grid(False)
 
+
+fig.tight_layout(pad=0.2)
 fig.savefig('paper_figures/signed_chains_for_conconnected_components.pdf', transparent=True, dpi=300)
 
 plt.show()
@@ -160,68 +116,85 @@ loop_forest = LoopForest(points, print_info=True)
 loop_forest._build_color_map_forest(start_color="#5ace2c")
 
 alpha_max = max(v for (_,v) in loop_forest.filtration)
-N = 4
-fig, axs = plt.subplots(1, N, sharey=True, figsize=(N*3,3))
+N = 3
+fig, axs = plt.subplots(1, N, sharey=True, figsize=(N*1,1))
 for k in range(0,N):
     axs[k].axis('off')
-    loop_forest.plot_at_filtration_with_dual(.25+.25*k, ax=axs[k])
+    loop_forest.plot_at_filtration_with_dual(.5+.25*k, ax=axs[k], dual_vertex_size=1, point_size=1)
     axs[k].set_title(None)
 fig.tight_layout(pad=0.1)
 fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300)
-# %%
+
+# %% Example: Point clouds with barcodes
+
+from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril, sample_noisy_star_pointy
+from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
+
+n_points = 500
+
+circle = sample_noisy_circle(n_points, noise_std=0.02, seed=4, radius = 0.38)*10
+star = sample_noisy_star(n_points, spikes=5, amplitude=0.4,radius=0.62, noise_std=0.02)*10
+star_pointy = sample_noisy_star_pointy(n_points, spikes=7, r_inner=0.4, r_outer=1, noise_std=0.02, seed=42)*10
+ellipse = sample_noisy_ellipse(n_points, a=0.9,b=0.37, noise_std = 0.02)*10
+circle_line = sample_noisy_circle_with_tendril(n_points, radius=0.51, tendril_length=0.3, tendril_fraction=0.05, noise_std=0.02, tendril_width_deg=2, seed=1)*10
+circle_forest = PersistenceForest(circle)
+star_forest = PersistenceForest(star)
+pointy_star_forest = PersistenceForest(star_pointy)
+ellipse_forest = PersistenceForest(ellipse)
+circle_line_forest = PersistenceForest(circle_line)
 color_palette = sns.color_palette("tab10")
 
 name_forest_list = [("Circle", circle_forest), ("Ellipse", ellipse_forest), ("Spoke Circle", circle_line_forest), ("Star", star_forest)]
 
-fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(10, 5), gridspec_kw={"height_ratios": [1, 1]})
+fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(5, 2.5), gridspec_kw={"height_ratios": [3, 1]})
 for i, (name,forest) in enumerate(name_forest_list):
     point_cloud = forest.point_cloud
 
     #point cloud
-    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=1, color= color_palette[i])
+    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=.4, color= color_palette[i])
     axes[0,i].set_aspect('equal')
     axes[0,i].set_box_aspect(1)
-    axes[0,i].set_title(name)
+    # axes[0,i].set_title(name)
+    axes[0,i].axis('off')
 
-    axes[1,i].set_box_aspect(1)
-    forest.plot_barcode(ax=axes[1,i],max_bars=25, sort="death", title=f"Barcode of {name} ", coloring="grey")
-    axes[1,i].set_xlim((0,7))
+    #barcode
+    forest.plot_barcode(ax=axes[1,i],max_bars=12, sort="death", coloring="grey", title="")
+    axes[1,i].set_xlim((0,8))
+    axes[1,i].grid(False)
+    axes[1,i].set_xticks(np.linspace(0,8,3))
+    # axes[1,i].set_yticks([])
+    axes[1,i].set_xlabel(None)
 
+fig.tight_layout(pad=2)
 fig.savefig('paper_figures/point_clouds_with_barcodes.pdf', transparent=True, dpi=300)
 plt.show()
 
-# %%
+# %% Example: Measurement comparisons
 from cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
-fig, axes = plt.subplots(nrows=1,ncols=3, figsize=(10, 2.5))
+fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 2), sharex='col')
 
-cycle_funcs_list = [("Length",signed_chain_edge_length),("Area",signed_chain_area), ("Excess Curvature",signed_chain_excess_curvature)]
+cycle_funcs_list = [("length",signed_chain_edge_length),("area",signed_chain_area), ("excess curvature",signed_chain_excess_curvature)]
 
 use_signed = False
 
 for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     for j,(name, forest) in enumerate(name_forest_list):
-
-        forest.plot_barcode_measurement(cycle_func=cycle_func, ax = axes[i], signed=use_signed, label = name, show_baseline = False, x_range = [0,7],color = color_palette[j])
+        forest.plot_barcode_measurement(cycle_func=cycle_func, ax = axes[0, i], signed=use_signed, label = name, show_baseline = False, x_range = [0,7],color = color_palette[j], lw=1)
 
         
-    axes[i].set_title(func_name)
-    axes[i].legend()
-    axes[i].set_xlim((0,7.2)) 
-    axes[i].set_ylim(bottom=0) 
+    axes[0, i].set_title(func_name)
+    axes[0, i].set_xlim((0,8)) 
+    axes[0, i].set_xticks(np.linspace(0,8,3))
+    axes[0, i].set_ylim(bottom=0) 
+    axes[0, i].grid(False)
 
-fig.savefig('paper_figures/point_clouds_measurement_comparisons.pdf', transparent=True, dpi=300)
-plt.show()
-
-# %%
 from forest_landscapes import plot_landscape_comparison
 
 forests = [forest for _, forest in name_forest_list]
 forest_labels = [name for name, _ in name_forest_list]
 
 
-fig, axes = plt.subplots(nrows=1,ncols=3, figsize=(10, 2.5))
 for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
-
     for forest in forests:
         forest.compute_generalized_landscape_family(
             cycle_func=cycle_func,
@@ -230,21 +203,31 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
             label=func_name,
             signed=use_signed) 
 
-    plot_landscape_comparison(forests=forests,label = func_name, ax = axes[i], forest_labels = forest_labels)
+    plot_landscape_comparison(
+        forests=forests,
+        label = func_name,
+        ax = axes[1, i],
+        forest_labels = ["" for _ in forests],
+    )
 
         
-    axes[i].set_title(fr"Generalized Landscape $\lambda_1$ of {func_name}")
-    axes[i].legend()
-    axes[i].set_xlim((0,7.2)) 
-    axes[i].set_ylim(bottom=0)
-    axes[i].set_xlabel(None)
-    axes[i].set_ylabel(None) 
+    # axes[1, i].set_title(fr"{func_name}")
+    axes[1, i].set_title(None)
+    axes[1, i].set_xlim((0,8)) 
+    axes[1, i].set_xticks(np.linspace(0,8,3))
+    axes[1, i].set_ylim(bottom=0)
+    axes[1, i].set_xlabel(None)
+    axes[1, i].set_ylabel(None) 
+    axes[1, i].grid(False)
 
-
-fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
+fig.tight_layout(h_pad=1, w_pad=.5)
+# fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
+# plt.show()
+fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 plt.show()
 
-# %%
+
+# %% Plot for intro
 def sample_four_leaf_clover(n, r=1.0, noise=0.0, R = (0, 2*np.pi)):
     t = np.random.uniform(R[0], R[1], n)
     p = (r * np.sin(2*t))[:, None] * np.column_stack((np.cos(t), np.sin(t)))
@@ -269,7 +252,7 @@ for (i, bar) in enumerate(bars):
 axs['barcode'].set_yticks([])
 axs['barcode'].set_xticks([])
 for (k, l) in enumerate(list(landscapes.landscapes.values())[:2]):
-    axs['landscapes'].plot(l.xs, l.ys, label=f"{k+1}")
+    axs['landscapes'].plot(l.xs, l.ys, label=f"{k+1}", lw=1)
 # axs['landscapes'].set_axis_off()
 axs['landscapes'].set_yticks([])
 axs['landscapes'].sharex(axs['barcode'])
