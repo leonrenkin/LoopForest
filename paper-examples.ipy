@@ -7,7 +7,7 @@ import seaborn as sns
 from matplotlib.patches import Rectangle, Circle
 
 plt.rcParams.update({
-    "text.usetex": False,
+    "text.usetex": True,
     "font.family": "sans-serif",
     "text.latex.preamble": r"\usepackage{sfmath}",
     "font.size": 6,
@@ -52,7 +52,7 @@ connected_islands_forest = PersistenceForest( connected_islands_cloud )
 disconnected_islands_forest= PersistenceForest( disconnected_islands_cloud )
 
 forests = [ disconnected_islands_forest,connected_islands_forest]
-forest_labels = ["disconnected islands","connected islands"]
+forest_labels = ["$X$","$Y$"]
 labels = ["unsigned excess components","signed excess components"]
 
 for object in forests:
@@ -81,6 +81,8 @@ for i, forest in enumerate(forests):
     axes[i].set_box_aspect(1)
     # axes[i].axis('off')
     # axes[i,0].set_title(forest_labels[i])
+axes[0].set_title("point cloud $X$")
+axes[1].set_title("point cloud $Y$")
 fig.show()
 
 fig.savefig('paper_figures/signed_chains_for_conconnected_components1.pdf', transparent=True, dpi=300, bbox_inches='tight')
@@ -108,6 +110,11 @@ for axs in axes:
     for ax in axs:
         ax.grid(False)
 
+axes[0,0].legend()
+axes[0,0].set_ylabel(r"$f \circ \gamma$")
+axes[1,0].set_ylabel(r"$\lambda_1(-, f)$")
+fig.align_ylabels()
+fig.supylabel(r"$f$ = excess \# conn.\ cpts.")
 
 fig.tight_layout(h_pad=2, w_pad=.5)
 fig.savefig('paper_figures/signed_chains_for_conconnected_components.pdf', transparent=True, dpi=300, bbox_inches='tight')
@@ -128,12 +135,17 @@ loop_forest._build_color_map_forest(start_color="#5ace2c")
 
 alpha_max = max(v for (_,v) in loop_forest.filtration)
 N = 3
-fig, axs = plt.subplots(1, N, sharey=True, figsize=(N*1,1))
+fig, axs = plt.subplots(1, N, sharey=True, figsize=(N*1.5,1.25))
 for k in range(0,N):
     axs[k].axis('off')
-    loop_forest.plot_at_filtration_with_dual(.5+.25*k, ax=axs[k], dual_vertex_size=1, point_size=1)
+    axs[k].set_xticks([])
+    axs[k].set_yticks([])
+    loop_forest.plot_at_filtration_with_dual(.5+.25*k, ax=axs[k], dual_vertex_size=1.5, point_size=1.5)
     axs[k].set_title(None)
-fig.tight_layout(pad=0.1)
+    if k > 0:
+        fig.text((k)/N, 0.5, "$\subseteq$")
+fig.tight_layout(pad=0.0)
+fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300)
 
 # %% Example: Point clouds with barcodes
@@ -162,7 +174,7 @@ for i, (name,forest) in enumerate(name_forest_list):
     point_cloud = forest.point_cloud
 
     #point cloud
-    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=.4, color= color_palette[i])
+    axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=.4, color= color_palette[i], ec='none')
     axes[0,i].set_box_aspect(1)
 
     #barcode
@@ -171,6 +183,7 @@ for i, (name,forest) in enumerate(name_forest_list):
     axes[1,i].grid(False)
     axes[1,i].set_xticks(np.linspace(0,8,3))
     axes[1,i].set_xlabel(None)
+axes[1,0].set_ylabel("barcode $H_1$")
 
 for i in range (4):
     axes[0,i].set_xlim((-10,10))
@@ -182,7 +195,11 @@ plt.show()
 from cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
 fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 2), sharex='col', layout='constrained')
 
-cycle_funcs_list = [("length",signed_chain_edge_length),("area",signed_chain_area), ("excess curvature",signed_chain_excess_curvature)]
+cycle_funcs_list = [
+    ("$f$ = length",signed_chain_edge_length),
+    ("$f$ = area",signed_chain_area), 
+    ("$f$ = excess curvature",signed_chain_excess_curvature)
+]
 
 use_signed = False
 
@@ -228,7 +245,8 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     axes[1, i].set_xlabel(None)
     axes[1, i].set_ylabel(None) 
     axes[1, i].grid(False)
-
+axes[0,0].set_ylabel("$f \circ \gamma$")
+axes[1,0].set_ylabel("$\lambda_1(-, f)$")
 fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
 plt.show()
 
@@ -256,7 +274,7 @@ ax1.set_axis_off()
 fig1.tight_layout(pad=0.0)
 fig1.savefig("paper_figures/four_leaf_clover_landscapes.pdf", dpi=300, transparent=True)
 
-fig2, axs2 = plt.subplots(nrows=2, figsize=(2,.8))
+fig2, axs2 = plt.subplots(nrows=2, figsize=(4,.8))
 forest.plot_barcode(ax=axs2[0], max_bars=12, sort="length", coloring="forest", title="", lw=1)
 axs2[0].set_xlabel("")
 axs2[0].set_yticks([])
@@ -270,14 +288,17 @@ for (k, l) in enumerate(list(landscapes.landscapes.values())[:2]):
 axs2[1].set_yticks([])
 axs2[1].sharex(axs2[0])
 axs2[1].tick_params(axis='x', which='both', length=0)
+axs2[1].set_xlabel(None)
 axs2[1].legend(loc='upper left', frameon=False)
 axs2[1].grid()
 axs2[1].set_ylim((0,1))
-fig2.tight_layout(w_pad=.5, h_pad=0.0)
+
+fig2.tight_layout(h_pad=0, w_pad=0.0)
+fig2.subplots_adjust(left=0, right=1, top=1, bottom=0)
 fig2.savefig("paper_figures/four_leaf_clover_landscapes2.pdf", dpi=300, transparent=True)
 
 N = axs2[0].get_xticks().shape[0]
-fig3, axs3 = plt.subplots(ncols=N, figsize=(1.9,.3), sharex=True, sharey=True)
+fig3, axs3 = plt.subplots(ncols=N, figsize=(4,.4), sharex=True, sharey=True)
 for (ax, t) in zip(axs3, axs2[0].get_xticks()):
     ax.set_aspect('equal')
     ax.set_box_aspect(1)
@@ -285,5 +306,6 @@ for (ax, t) in zip(axs3, axs2[0].get_xticks()):
     ax.set_yticks([])
     forest.plot_at_filtration(filt_val=t, ax=ax, title="", show=False, point_size=1)
 fig3.tight_layout(pad=.5)
+fig3.subplots_adjust(left=0, right=1, top=1, bottom=0)
 fig3.savefig("paper_figures/four_leaf_clover_landscapes3.pdf", dpi=300, transparent=True)
 # %%
