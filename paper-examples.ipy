@@ -4,15 +4,21 @@ import matplotlib.pyplot as plt
 from LoopForest import LoopForest
 from PersistenceForest import PersistenceForest
 import seaborn as sns
+from matplotlib.patches import Rectangle, Circle
 
 plt.rcParams.update({
-    "text.usetex": True,
+    "text.usetex": False,
     "font.family": "sans-serif",
     "text.latex.preamble": r"\usepackage{sfmath}",
     "font.size": 6,
-    "axes.titlesize": 6,
-    "axes.labelsize": 6,
+    "axes.titlesize": 8,
+    "axes.labelsize": 8,
     "figure.dpi": 300,
+    "legend.handlelength": 0.5,
+    "legend.frameon": False,
+    "axes.grid": False,
+    "grid.color": "#d3d3d3",
+    "grid.linewidth": 0.5
 })
 
 %load_ext autoreload
@@ -55,41 +61,48 @@ for object in forests:
         max_k=6,
         num_grid_points=1000,
         label="signed excess components",
-        signed=True)   
+        signed=True,
+        x_grid=np.linspace(0,40,1000))   
 
     object.compute_generalized_landscape_family(
         cycle_func=signed_chain_excess_connected_components,
         max_k=6,
         num_grid_points=1000,
         label="unsigned excess components",
-        signed=False)   
+        signed=False,
+        x_grid=np.linspace(0,40,1000))   
     
 
 color_palette = sns.color_palette("tab10")
-fig, axes = plt.subplots(ncols=3,nrows=2,figsize = (3,2), sharex='col')
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (2.5,1), sharey='all')
 for i, forest in enumerate(forests):
-    axes[i,0].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=.4, color= color_palette[i])
-    axes[i,0].set_aspect('equal')
-    axes[i,0].set_box_aspect(1)
-    axes[i,0].axis('off')
+    axes[i].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=.4, color= color_palette[i])
+    axes[i].set_aspect('equal')
+    axes[i].set_box_aspect(1)
+    # axes[i].axis('off')
     # axes[i,0].set_title(forest_labels[i])
+fig.show()
 
+fig.savefig('paper_figures/signed_chains_for_conconnected_components1.pdf', transparent=True, dpi=300, bbox_inches='tight')
+# %%
+fig, axes = plt.subplots(ncols=2,nrows=2,figsize = (3,1.5), sharex='col', sharey='row', layout='constrained')
 for i, forest in enumerate(forests):
-    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,1], signed=False, title = "unsigned excess components", label = forest_labels[i], show_baseline = False, x_range = [5,40], lw=1)
-    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[1,1], signed=True, title = "signed excess components", label = forest_labels[i], show_baseline = False, x_range = [5,40], lw=1)
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,0], signed=False, title = "unsigned", label = forest_labels[i], show_baseline = False, x_range = [0,40], lw=1, zorder=10, clip_on=False)
+    forest.plot_barcode_measurement(cycle_func=signed_chain_excess_connected_components, ax = axes[0,1], signed=True, title = "signed", label = forest_labels[i], show_baseline = False, x_range = [0,40], lw=1, zorder=10, clip_on=False)
 for i in range(2):
-    axes[i,1].set_box_aspect(1)
-    axes[i,1].set_ylim([0,4])
-    axes[i,1].set_xlim([0,40])
+    # axes[0, i].set_box_aspect(1)
+    axes[0, i].set_ylim([0,4])
+    axes[0, i].set_yticks(np.linspace(0,4,5))
+    axes[0, i].set_xlim([0,40])
 
 for j, label in enumerate(labels):
-    title = fr"landscape $\lambda_1$"
-    plot_landscape_comparison(forests=forests, label=label, ax=axes[j,2],title=title) #forest_labels=forest_labels,
-    axes[j,2].set_xlim([0,40])
-    axes[j,2].set_ylim([0,20])
-    axes[j,2].set_box_aspect(1)
-    axes[j,2].set_xlabel(None)
-    axes[j,2].set_ylabel(None)
+    title = ""
+    plot_landscape_comparison(forests=forests, label=label, ax=axes[1,j],title=title, zorder=10, clip_on=False) #foresto_labels=forest_labels,
+    axes[1,j].set_xlim([0,40])
+    axes[1,j].set_ylim([0,20])
+    # axes[1,j].set_box_aspect(1)
+    axes[1,j].set_xlabel(None)
+    axes[1,j].set_ylabel(None)
 
 for axs in axes:
     for ax in axs:
@@ -144,25 +157,24 @@ color_palette = sns.color_palette("tab10")
 
 name_forest_list = [("Circle", circle_forest), ("Ellipse", ellipse_forest), ("Spoke Circle", circle_line_forest), ("Star", star_forest)]
 
-fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(5, 2.5), gridspec_kw={"height_ratios": [3, 1]}, layout='constrained')
+fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(5, 2.5), gridspec_kw={"height_ratios": [3, 1]}, layout='constrained', sharey='row')
 for i, (name,forest) in enumerate(name_forest_list):
     point_cloud = forest.point_cloud
 
     #point cloud
     axes[0,i].scatter(point_cloud[:,0], point_cloud[:,1], s=.4, color= color_palette[i])
-    axes[0,i].set_aspect('equal')
     axes[0,i].set_box_aspect(1)
-    # axes[0,i].set_title(name)
-    axes[0,i].axis('off')
 
     #barcode
     forest.plot_barcode(ax=axes[1,i],max_bars=12, sort="death", coloring="grey", title="")
     axes[1,i].set_xlim((0,8))
     axes[1,i].grid(False)
     axes[1,i].set_xticks(np.linspace(0,8,3))
-    # axes[1,i].set_yticks([])
     axes[1,i].set_xlabel(None)
 
+for i in range (4):
+    axes[0,i].set_xlim((-10,10))
+    axes[0,i].set_ylim((-10,10))
 fig.savefig('paper_figures/point_clouds_with_barcodes.pdf', transparent=True, dpi=300)
 plt.show()
 
@@ -235,23 +247,43 @@ pts = np.vstack([
 ])
 pts = pts[np.linalg.norm(pts, axis=1) > 0.25]
 forest = LoopForest(pts)
-landscapes = forest.compute_generalized_landscape_family(polygon_length_squared_area_ratio_normalized)
-fig, axs = plt.subplot_mosaic([['points', 'barcode'], ['points', 'landscapes']], figsize=(3,1), width_ratios = [2, 5])
-axs['points'].set_aspect('equal')
-axs['points'].scatter(*pts.T, s=1, color='black')
-axs['points'].set_axis_off()
-bars = sorted(forest.barcode, key=lambda b: b.death - b.birth)[-30:]
-for (i, bar) in enumerate(bars):
-    axs['barcode'].plot([bar.birth, bar.death], [i,i], lw=1, color='black')
-axs['barcode'].set_yticks([])
-axs['barcode'].set_xticks([])
-for (k, l) in enumerate(list(landscapes.landscapes.values())[:2]):
-    axs['landscapes'].plot(l.xs, l.ys, label=f"{k+1}", lw=1)
-# axs['landscapes'].set_axis_off()
-axs['landscapes'].set_yticks([])
-axs['landscapes'].sharex(axs['barcode'])
-axs['landscapes'].legend(loc='upper left', frameon=False)
-fig.tight_layout(h_pad=0.0, w_pad=1.0)
-fig.savefig("paper_figures/four_leaf_clover_landscapes.pdf", dpi=300, transparent=True)
+landscapes = forest.compute_generalized_landscape_family(polygon_length_squared_area_ratio_normalized, x_grid=np.linspace(-1.5/20, 1.5+1.5/20, 200))
+fig1 = plt.figure(figsize=(1,1))
+ax1 = fig1.gca()
+ax1.set_aspect('equal')
+ax1.scatter(*pts.T, s=1, color='black')
+ax1.set_axis_off()
+fig1.tight_layout(pad=0.0)
+fig1.savefig("paper_figures/four_leaf_clover_landscapes.pdf", dpi=300, transparent=True)
 
+fig2, axs2 = plt.subplots(nrows=2, figsize=(2,.8))
+forest.plot_barcode(ax=axs2[0], max_bars=12, sort="length", coloring="forest", title="", lw=1)
+axs2[0].set_xlabel("")
+axs2[0].set_yticks([])
+axs2[0].set_xticks(np.linspace(0, 1.5, 10))
+axs2[0].set_xlim((-1.5/20,1.5+1.5/20))
+axs2[0].set_xticklabels([])
+axs2[0].tick_params(axis='x', which='both', length=0)
+axs2[0].grid()
+for (k, l) in enumerate(list(landscapes.landscapes.values())[:2]):
+    axs2[1].plot(l.xs, l.ys, label=f"{k+1}", lw=1, clip_on=False, zorder=10)
+axs2[1].set_yticks([])
+axs2[1].sharex(axs2[0])
+axs2[1].tick_params(axis='x', which='both', length=0)
+axs2[1].legend(loc='upper left', frameon=False)
+axs2[1].grid()
+axs2[1].set_ylim((0,1))
+fig2.tight_layout(w_pad=.5, h_pad=0.0)
+fig2.savefig("paper_figures/four_leaf_clover_landscapes2.pdf", dpi=300, transparent=True)
+
+N = axs2[0].get_xticks().shape[0]
+fig3, axs3 = plt.subplots(ncols=N, figsize=(1.9,.3), sharex=True, sharey=True)
+for (ax, t) in zip(axs3, axs2[0].get_xticks()):
+    ax.set_aspect('equal')
+    ax.set_box_aspect(1)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    forest.plot_at_filtration(filt_val=t, ax=ax, title="", show=False, point_size=1)
+fig3.tight_layout(pad=.5)
+fig3.savefig("paper_figures/four_leaf_clover_landscapes3.pdf", dpi=300, transparent=True)
 # %%

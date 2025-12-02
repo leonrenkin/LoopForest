@@ -152,7 +152,7 @@ class StepFunctionData:
                 bl_kwargs.update(baseline_kwargs)
             ax.hlines(self.baseline, xmin, xmax, **bl_kwargs)
 
-        ax.grid(True, alpha=0.3)
+        # ax.grid(True, alpha=0.3)
 
         ax.set_xlim(xmin, xmax)
         if y_range is not None:
@@ -1310,6 +1310,7 @@ def plot_landscape_comparison(
     ax: Optional["matplotlib.axes.Axes"] = None,
     forest_labels: Optional[List[str]] = None,
     title: Optional[str] = None,
+    **kwargs
 ):
     """
     Compare the k-th landscape across multiple forests for a single functional.
@@ -1350,7 +1351,7 @@ def plot_landscape_comparison(
         if k not in fam.landscapes:
             continue
         plf = fam.landscapes[k]
-        ax.plot(plf.xs, plf.ys, label=forest_label, lw=1)
+        ax.plot(plf.xs, plf.ys, label=forest_label, lw=1, **kwargs)
 
     ax.set_xlabel("filtration value")
     ax.set_ylabel(fr"$\lambda_{k}$")
@@ -1358,6 +1359,6 @@ def plot_landscape_comparison(
         title = fr"Comparison of {label} $\lambda_{k}$"
     ax.set_title(title)
     # ax.legend()
-    ax.grid(True, alpha=0.3)
+    # ax.grid(True, alpha=0.3)
 
     return ax

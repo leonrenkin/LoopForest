@@ -1464,7 +1464,7 @@ class LoopForest:
                 tris_xy.append([pts[i], pts[j], pts[k]])
 
         # --- Base scatter
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points", ec="none")
 
         # --- Draw triangles first (under edges)
         if fill_triangles and tris_xy:
@@ -1475,7 +1475,7 @@ class LoopForest:
 
         # --- Draw edges
         if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=0.8, colors="0.65", zorder=2, label="edges")
+            edge_coll = LineCollection(edges_xy, linewidths=0.5, colors="0.65", zorder=2, label="edges")
             ax.add_collection(edge_coll)
 
         
@@ -1492,11 +1492,13 @@ class LoopForest:
                 loop_xy = pts[vs]  # shape: (m, 2)
 
                 # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-                segments = [np.array([loop_xy[i-1], loop_xy[i]]) for i in range(len(loop_xy))]
+                segments = np.vstack(loop_xy)
+                ax.add_patch(Polygon(segments, fc="none", ec=color_map[bar], lw=1, zorder=5))
+                # segments = [np.array([loop_xy[i-1], loop_xy[i]]) for i in range(len(loop_xy))]
 
                 # Thicker colored edges along the loop
-                loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
-                ax.add_collection(loop_coll)
+                # loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
+                # ax.add_collection(loop_coll)
 
                 # Optional vertex markers for the loop
                 if loop_vertex_markers:
@@ -1929,6 +1931,7 @@ class LoopForest:
         coloring: Literal["forest", "bars","none"] = "forest",
         max_bars: int = 0,
         min_bar_length: float = 0.0,
+        **kwargs
     ):
         """
         Plot a 1D barcode from self.barcode (a set[Bar]).
@@ -2068,7 +2071,8 @@ class LoopForest:
                 "y": i,
                 "xmin": x0,
                 "xmax": x1 if math.isfinite(x1) else ax.get_xlim()[1] - 0.25 * pad,
-                "linewidth": 3.0,  # thicker bars
+                "linewidth": 3.0, 
+                **kwargs # thicker bars
             }
             if color is not None:
                 line_kwargs["color"] = color
@@ -2098,7 +2102,6 @@ class LoopForest:
         ax.set_yticks([])
         ax.set_xlabel(xlabel)
         ax.set_title(title)
-        ax.grid(True, axis="x", linestyle=":", alpha=0.5)
         ax.set_ylim(-1, n_bars)  # keep bars nicely framed
         fig.tight_layout()
 
