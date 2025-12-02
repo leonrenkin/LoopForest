@@ -15,11 +15,9 @@ plt.rcParams.update({
     "figure.dpi": 300,
 })
 
-# %%
 %load_ext autoreload
 %autoreload 3
 !mkdir -p paper_figures
-%matplotlib gtk3
 
 # %%
 double_edge_cloud = point_cloud=np.loadtxt("signed_chain_example.csv",  delimiter=",", skiprows=1)
@@ -68,7 +66,7 @@ for object in forests:
     
 
 color_palette = sns.color_palette("tab10")
-fig, axes = plt.subplots(ncols=3,nrows=2,figsize = (4,2))
+fig, axes = plt.subplots(ncols=3,nrows=2,figsize = (3,2), sharex='col')
 for i, forest in enumerate(forests):
     axes[i,0].scatter(forest.point_cloud[:,0], forest.point_cloud[:,1], s=.4, color= color_palette[i])
     axes[i,0].set_aspect('equal')
@@ -98,8 +96,8 @@ for axs in axes:
         ax.grid(False)
 
 
-fig.tight_layout(pad=0.2)
-fig.savefig('paper_figures/signed_chains_for_conconnected_components.pdf', transparent=True, dpi=300)
+fig.tight_layout(h_pad=2, w_pad=.5)
+fig.savefig('paper_figures/signed_chains_for_conconnected_components.pdf', transparent=True, dpi=300, bbox_inches='tight')
 
 plt.show()
 
@@ -130,7 +128,7 @@ fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300
 from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril, sample_noisy_star_pointy
 from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
 
-n_points = 500
+n_points = 1000
 
 circle = sample_noisy_circle(n_points, noise_std=0.02, seed=4, radius = 0.38)*10
 star = sample_noisy_star(n_points, spikes=5, amplitude=0.4,radius=0.62, noise_std=0.02)*10
@@ -146,7 +144,7 @@ color_palette = sns.color_palette("tab10")
 
 name_forest_list = [("Circle", circle_forest), ("Ellipse", ellipse_forest), ("Spoke Circle", circle_line_forest), ("Star", star_forest)]
 
-fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(5, 2.5), gridspec_kw={"height_ratios": [3, 1]})
+fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(5, 2.5), gridspec_kw={"height_ratios": [3, 1]}, layout='constrained')
 for i, (name,forest) in enumerate(name_forest_list):
     point_cloud = forest.point_cloud
 
@@ -165,13 +163,12 @@ for i, (name,forest) in enumerate(name_forest_list):
     # axes[1,i].set_yticks([])
     axes[1,i].set_xlabel(None)
 
-fig.tight_layout(pad=2)
 fig.savefig('paper_figures/point_clouds_with_barcodes.pdf', transparent=True, dpi=300)
 plt.show()
 
 # %% Example: Measurement comparisons
 from cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
-fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 2), sharex='col')
+fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 2), sharex='col', layout='constrained')
 
 cycle_funcs_list = [("length",signed_chain_edge_length),("area",signed_chain_area), ("excess curvature",signed_chain_excess_curvature)]
 
@@ -220,10 +217,7 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     axes[1, i].set_ylabel(None) 
     axes[1, i].grid(False)
 
-fig.tight_layout(h_pad=1, w_pad=.5)
-# fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
-# plt.show()
-fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
 plt.show()
 
 
@@ -257,7 +251,7 @@ for (k, l) in enumerate(list(landscapes.landscapes.values())[:2]):
 axs['landscapes'].set_yticks([])
 axs['landscapes'].sharex(axs['barcode'])
 axs['landscapes'].legend(loc='upper left', frameon=False)
-fig.tight_layout(pad=0.0)
+fig.tight_layout(h_pad=0.0, w_pad=1.0)
 fig.savefig("paper_figures/four_leaf_clover_landscapes.pdf", dpi=300, transparent=True)
 
 # %%
