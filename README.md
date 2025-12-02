@@ -28,14 +28,14 @@ from cycle_rep_vectorisations import signed_chain_edge_length
 
 # 1) Create a point cloud
 rng = np.random.default_rng(0)
-pts = rng.standard_normal((300, 2))
+pts = rng.random((300, 2))
 
 # 2) Build the persistence forest (alpha complex)
 forest = PersistenceForest(pts, print_info=True)
 
 # 3) Visualize
 forest.plot_barcode(min_bar_length=0.01, coloring="forest")
-forest.plot_at_filtration(0.5)
+forest.plot_at_filtration(0.1)
 
 # 4) Generalized landscapes
 forest.compute_generalized_landscape_family(
