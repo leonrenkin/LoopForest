@@ -33,6 +33,19 @@ from typing import Callable, Dict, Iterable, Sequence, Optional
 import statistics
 import matplotlib.pyplot as plt
 
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "sans-serif",
+    "text.latex.preamble": r"\usepackage{sfmath}",
+    "font.size": 6,
+    "axes.titlesize": 8,
+    "axes.labelsize": 8,
+    "figure.dpi": 300,
+    "legend.handlelength": 0.5,
+    "legend.frameon": False,
+    "axes.grid": False,
+})
+
 import numpy as np
 
 # Local imports
@@ -416,14 +429,17 @@ def plot_runtimes_from_csv(
                 statistics.pstdev(n_to_times[n]) if len(n_to_times[n]) > 1 else 0.0
                 for n in xs
             ]
-            ax.errorbar(
+            # ax.errorbar(
+            ax.scatter(
                 xs,
                 ys_mean,
-                yerr=ys_std,
+                # yerr=ys_std,
                 marker="o",
-                capsize=3,
+                # capsize=3,
+                edgecolors=None,
+                s=1,
                 label=label,
-                color=color,
+                # color=color,
                 linestyle=linestyle,
             )
         else:
@@ -500,7 +516,7 @@ def plot_benchmark_row(
     linestyle_dict: Optional[dict[str, str]] = None,
 ) -> None:
     """Render a 1x2 grid (e.g., only linear or only log plots)."""
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), gridspec_kw={"width_ratios": [1, 1]})
+    fig, axes = plt.subplots(1, 2, figsize=(4, 2), gridspec_kw={"width_ratios": [1, 1]}, sharey="row", layout='constrained')
 
     for _, col, bench_name, methods, log_scale in layout:
         plot_runtimes_from_csv(
@@ -517,14 +533,17 @@ def plot_benchmark_row(
         )
 
     for col, title in enumerate(column_titles):
-        bbox = axes[col].get_position()
-        x_center = bbox.x0 + bbox.width / 2
-        fig.text(x_center, bbox.y1 + 0.03, title, ha="center", va="bottom", fontsize=12, fontweight="bold")
+        axes[col].grid(False)
+        axes[col].set_title(title)
+
+        # bbox = axes[col].get_position()
+        # x_center = bbox.x0 + bbox.width / 2
+        # fig.text(x_center, bbox.y1 + 0.03, title, ha="center", va="bottom", fontsize=12, fontweight="bold")
 
     #fig.suptitle(figure_title, fontsize=13, y=0.94)
-    fig.supxlabel("Number of points", fontsize=12)
-    fig.supylabel("Time [s]", fontsize=12)
-    fig.savefig(_benchmark_path(output_name, "png"), dpi=300)
+    fig.supxlabel("number of points")
+    fig.supylabel("time/s")
+    fig.savefig(_benchmark_path(output_name, "pdf"), dpi=300, transparent=True)
     plt.show()
 
 if __name__ == "__main__":
@@ -593,35 +612,35 @@ if __name__ == "__main__":
 
 
     if True:
-        grid_spec = [
-            (0, 0, name_2d, methods_2d, False),
-            (0, 1, name_3d, methods_3d, False),
-            (1, 0, name_2d_log, methods_2d, True),
-            (1, 1, name_3d_log, methods_3d, True),
-        ]
+        # grid_spec = [
+        #     (0, 0, name_2d, methods_2d, False),
+        #     (0, 1, name_3d, methods_3d, False),
+        #     (1, 0, name_2d_log, methods_2d, True),
+        #     (1, 1, name_3d_log, methods_3d, True),
+        # ]
 
-        plot_benchmark_grid(
-            layout=grid_spec,
-            label_dict=label_dict,
-            column_titles=["2D benchmarks", "3D benchmarks"],
-            row_titles=["Linear scale", "Log scale"],
-            figure_title="PersistenceForest runtime vs. number of points",
-            output_name="benchmark_grid",
-            color_dict=color_dict,
-        )
+        # plot_benchmark_grid(
+        #     layout=grid_spec,
+        #     label_dict=label_dict,
+        #     column_titles=["2D benchmarks", "3D benchmarks"],
+        #     row_titles=["Linear scale", "Log scale"],
+        #     figure_title="PersistenceForest runtime vs. number of points",
+        #     output_name="benchmark_grid",
+        #     color_dict=color_dict,
+        # )
 
-        linear_spec = [
-            (0, 0, name_2d, methods_2d, False),
-            (0, 1, name_3d, methods_3d, False),
-        ]
-        plot_benchmark_row(
-            layout=linear_spec,
-            label_dict=label_dict,
-            column_titles=["2D benchmarks", "3D benchmarks"],
-            figure_title="PersistenceForest runtime (linear scale)",
-            output_name="benchmark_linear_only",
-            color_dict=color_dict,
-        )
+        # linear_spec = [
+        #     (0, 0, name_2d, methods_2d, False),
+        #     (0, 1, name_3d, methods_3d, False),
+        # ]
+        # plot_benchmark_row(
+        #     layout=linear_spec,
+        #     label_dict=label_dict,
+        #     column_titles=["2D benchmarks", "3D benchmarks"],
+        #     figure_title="PersistenceForest runtime (linear scale)",
+        #     output_name="benchmark_linear_only",
+        #     color_dict=color_dict,
+        # )
 
         log_spec = [
             (0, 0, name_2d_log, methods_2d, True),
@@ -630,7 +649,7 @@ if __name__ == "__main__":
         plot_benchmark_row(
             layout=log_spec,
             label_dict=label_dict,
-            column_titles=["2D benchmarks", "3D benchmarks"],
+            column_titles=["2D", "3D"],
             figure_title="PersistenceForest runtime (log-log scale)",
             output_name="benchmark_log_only",
             color_dict=color_dict,
