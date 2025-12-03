@@ -52,8 +52,8 @@ from cycle_rep_vectorisations import signed_chain_excess_connected_components, s
 double_edge_cloud = np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
-double_edge_forest.plot_at_filtration(15,show_orientation_arrows=True)
-signed_cycle = double_edge_forest.max_bar().cycle_at_filtration_value(15)
+double_edge_forest.plot_at_filtration(15,show_orientation_arrows=True, figsize=(5,5))
+
 
 
 # %%

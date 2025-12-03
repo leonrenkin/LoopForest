@@ -1363,7 +1363,7 @@ class PersistenceForest:
         # --- Aesthetics
         ax.set_aspect("equal", adjustable="box")
         if title is None:
-            ax.set_title(f"α ≤ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
+            ax.set_title(fr"$\alpha \leq$ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
         else:
             ax.set_title(title)
         #ax.set_xlabel("x")
