@@ -1727,7 +1727,6 @@ class LoopForest:
         # ax.autoscale()
         return ax
 
-    #ChatGPT plotting function
     def plot_dendrogram(
         self,
         ax=None,
@@ -1920,7 +1919,7 @@ class LoopForest:
             plt.show()
         return ax
 
-    # ChatGPT plotting function
+   
     def plot_barcode(
         self,
         *,
@@ -2112,7 +2111,7 @@ class LoopForest:
 
         return ax
 
-    #ChatGPT plotting function
+   
     def plot_loops(
             self, 
             vertex_loops: list[list[int]], 
@@ -2473,7 +2472,7 @@ class LoopForest:
             },
         )
     
-    #ChatGPT function, v1
+
     def _build_convolution_with_indicator(
             self,
             starts: List[float],
@@ -2577,7 +2576,6 @@ class LoopForest:
 
         return h, xs, ys
 
-    #ChatGPT function, v2
     def compute_convolution_kernel_for_bar(
         self,
         bar: "Bar",
@@ -2624,7 +2622,6 @@ class LoopForest:
             },
         )
 
-    #ChatGPT function, v2
     def compute_generalized_interval_landscape(
         self,
         polyhedral_path_func: Callable[[NDArray[np.float64]], float],
@@ -2657,7 +2654,6 @@ class LoopForest:
 
         return h, xs, ys
 
-    #ChatGPT function, v2
     def compute_landscape_kernel_for_bar(
         self,
         bar: "Bar",
@@ -2714,7 +2710,6 @@ class LoopForest:
             },
         )
 
-    #ChatGPT function, v2
     def compute_generalized_landscape_family(
         self,
         polyhedral_path_func: Callable[[NDArray[np.float64]], float],
@@ -2940,7 +2935,6 @@ class LoopForest:
         ax.grid(True, alpha=0.3)
         return ax
 
-    #ChatGPT function, v1
     def plot_convolution(
             self,
             starts: List[float],

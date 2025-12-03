@@ -1593,7 +1593,6 @@ class PersistenceForest:
         return ax
 
 
-    #ChatGPT plotting function
     def plot_dendrogram(
         self,
         *args,
