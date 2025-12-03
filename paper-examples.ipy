@@ -25,10 +25,6 @@ plt.rcParams.update({
 %autoreload 3
 !mkdir -p paper_figures
 
-# %%
-
-import os
-os.environ["PATH"] = "/Library/TeX/texbin:" + os.environ["PATH"]
 
 #%%
 double_edge_cloud =np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1)
