@@ -276,8 +276,9 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     axes[1, i].set_xlabel(None)
     axes[1, i].set_ylabel(None) 
     axes[1, i].grid(False)
-axes[0,0].set_ylabel("$f \circ \gamma$")
-axes[1,0].set_ylabel("$\lambda_1(-, f)$")
+axes[0,0].set_ylabel(r"$f \circ \gamma$")
+axes[1,0].set_ylabel(r"$\lambda_1(-, f)$")
+fig.align_ylabels()
 fig.savefig('paper_figures/point_clouds_landscape_comparisons.pdf', transparent=True, dpi=300)
 plt.show()
 
@@ -339,4 +340,3 @@ for (ax, t) in zip(axs3, axs2[0].get_xticks()):
 fig3.tight_layout(pad=.5)
 fig3.subplots_adjust(left=0, right=1, top=1, bottom=0)
 fig3.savefig("paper_figures/four_leaf_clover_landscapes3.pdf", dpi=300, transparent=True)
-# %%
