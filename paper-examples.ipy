@@ -33,7 +33,7 @@ double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 double_edge_cloud_disconnected = np.concatenate((double_edge_cloud[:1], double_edge_cloud[2:]))
 double_edge_forest_disconnected = PersistenceForest( point_cloud=double_edge_cloud_disconnected )
 
-fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (4,1.5))
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (3,1.5))
 double_edge_forest_disconnected.plot_at_filtration(ax = axes[0], filt_val=0.15, show_orientation_arrows=True, title="Signed Cycle",show=False, show_cycles=False)
 double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, show_orientation_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False, show_cycles=False)
 axes[0].axis('off')
@@ -48,19 +48,19 @@ if isinstance(font_family, (list, tuple)):
     font_family = font_family[0]
 for ax, label in zip(axes, (fr"$X$", fr"$Y$")):
     pos = ax.get_position()
-    fig.text(
-        pos.x0 + pos.width / 2,
-        pos.y0 - label_offset,
-        label,
-        ha="center",
-        va="top",
-        fontsize=label_size
-    )
+    # fig.text(
+    #     pos.x0 + pos.width / 2,
+    #     pos.y0 - label_offset,
+    #     label,
+    #     ha="center",
+    #     va="top",
+    #     fontsize=label_size
+    # )
 fig.savefig(f"paper_figures/different_spaces_with_same_cycles.pdf", dpi=300, transparent=True, bbox_inches='tight', pad_inches=0.02)
 plt.show()
 # %%
 
-fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (4,1.5))
+fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (3,1.5))
 double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, show_orientation_arrows=True, title="Signed Cycle",show=False)
 double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, show_orientation_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
 axes[0].axis('off')
@@ -200,7 +200,7 @@ color_palette = sns.color_palette("tab10")
 
 name_forest_list = [("Circle", circle_forest), ("Ellipse", ellipse_forest), ("Spoke Circle", circle_line_forest), ("Star", star_forest)]
 
-fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(5, 2.5), gridspec_kw={"height_ratios": [3, 1]}, layout='constrained', sharey='row')
+fig, axes = plt.subplots(nrows=2,ncols=4, figsize=(5, 2), gridspec_kw={"height_ratios": [3, 1]}, layout='constrained', sharey='row')
 for i, (name,forest) in enumerate(name_forest_list):
     point_cloud = forest.point_cloud
 
@@ -224,7 +224,7 @@ plt.show()
 
 # %% Example: Measurement comparisons
 from cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
-fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 2), sharex='col', layout='constrained')
+fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 1.5), sharex='col', layout='constrained')
 
 cycle_funcs_list = [
     ("$f$ = length",signed_chain_edge_length),
