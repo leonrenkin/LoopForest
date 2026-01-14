@@ -1207,7 +1207,9 @@ class PersistenceForest:
         title: Optional[str] = None,
         show_orientation_arrows: bool = False,
         remove_double_edges: bool = False,
-        show_cycles: bool = True
+        show_cycles: bool = True,
+        linewidth_filt: float = 0.6,
+        linewidth_cycle: float = 0.8,
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -1298,7 +1300,7 @@ class PersistenceForest:
 
         # --- Draw edges
         if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=0.6, colors="0.3", zorder=2, label="edges")
+            edge_coll = LineCollection(edges_xy, linewidths=linewidth_filt, colors="0.3", zorder=2, label="edges")
             ax.add_collection(edge_coll)
 
         
@@ -1317,7 +1319,7 @@ class PersistenceForest:
                         segments = cycle.segments(point_cloud=self.point_cloud)
 
                     # Thicker colored edges along the loop
-                    loop_coll = LineCollection(segments, linewidths=0.8, colors=[color_map[bar]], zorder=5)
+                    loop_coll = LineCollection(segments, linewidths=linewidth_cycle, colors=[color_map[bar]], zorder=5)
                     ax.add_collection(loop_coll)
 
                     # Optional arrows to show loop edge orientation
@@ -1711,6 +1713,69 @@ class PersistenceForest:
         """
         from forest_plotting import _animate_filtration_generic
         return _animate_filtration_generic(self, with_barcode=with_barcode,filename=filename, *args, **kwargs)
+
+    def animate_barcode_measurement(
+                self,
+                cycle_func,
+                signed: bool = True,
+                bar = None,
+                *args,
+                **kwargs,
+        ):
+        """
+        Animate the filtration together with a barcode measurement.
+
+        This is the animated analogue of :meth:`plot_barcode_measurement`.
+        The left panel shows :meth:`plot_at_filtration` at a moving
+        filtration value, while the right panel shows the associated
+        barcode measurement with a vertical line indicating the current
+        filtration value.
+
+        Parameters
+        ----------
+        cycle_func :
+            Callable ``(chain, point_cloud) -> float`` that assigns a scalar
+            to each cycle representative associated to the chosen bar.
+            See :meth:`plot_barcode_measurement` for details.
+        signed : bool, optional
+            If ``True`` (default), ``cycle_func`` is called on the signed
+            cycle representatives. If ``False``, the chains are first
+            passed through ``chain.without_double_edges()``.
+        bar :
+            Bar to use for the measurement. If ``None``, the method uses
+            ``self.max_bar()`` inside the generic helper.
+        *args, **kwargs :
+            Forwarded to
+            :func:`forest_landscapes.animate_barcode_measurement_generic`.
+            Typical keyword arguments include ``filename``, ``fps``,
+            ``frames``, ``t_min``, ``t_max``, ``dpi``, ``total_figsize``,
+            ``plot_kwargs`` and ``measurement_kwargs``.
+
+        Returns
+        -------
+        anim, fig :
+            A pair ``(anim, fig)`` where ``anim`` is a
+            :class:`matplotlib.animation.FuncAnimation` and ``fig`` is the
+            underlying figure.
+        """
+        from forest_landscapes import animate_barcode_measurement_generic
+
+        if signed:
+            def _cycle_value(chain, point_cloud):
+                # `chain` is a SignedChain
+                return float(cycle_func(chain, point_cloud))
+        else:
+            def _cycle_value(chain, point_cloud):
+                # `chain` is a SignedChain
+                return float(cycle_func(chain.without_double_edges(), point_cloud))
+
+        return animate_barcode_measurement_generic(
+            forest=self,
+            cycle_func=_cycle_value,
+            bar=bar,
+            *args,
+            **kwargs,
+        )
 
     #------- generalized landscape ----------------
 
