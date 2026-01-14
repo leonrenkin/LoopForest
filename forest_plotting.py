@@ -48,6 +48,8 @@ def _plot_barcode_generic(
         coloring: Literal["forest", "bars","none","grey"] = "forest",
         max_bars: int = 0,
         min_bar_length: float = 0.0,
+        bar_width: float = 2.0,
+        descending: bool = False,
     ):
     """
     Plot a 1D barcode from forest.barcode (a set[Bar]).
@@ -123,18 +125,18 @@ def _plot_barcode_generic(
 
     # Optional sorting for display
     if sort == "birth":
-        bars.sort(key=lambda b: (b.birth, b.death))
+        bars.sort(key=lambda b: (b.birth, b.death), reverse=descending)
     elif sort == "death":
         def dkey(b):
             d = b.death
             return (math.inf if not math.isfinite(d) else d, b.birth)
-        bars.sort(key=dkey)
+        bars.sort(key=dkey, reverse=descending)
     elif sort == "length":
         def length(b):
             d = b.death
             d_val = math.inf if not math.isfinite(d) else d
             return d_val - b.birth
-        bars.sort(key=length, reverse=True)
+        bars.sort(key=length, reverse=descending)
     elif sort is None:
         # Keep whatever order came out of filtering
         pass
@@ -190,7 +192,7 @@ def _plot_barcode_generic(
             "y": i,
             "xmin": x0,
             "xmax": x1 if math.isfinite(x1) else ax.get_xlim()[1] - 0.25 * pad,
-            "linewidth": 1.0,  # thicker bars
+            "linewidth": bar_width,  # thicker bars
         }
         if color is not None:
             line_kwargs["color"] = color
@@ -568,10 +570,10 @@ def _animate_filtration_generic(
 
             if barcode_kwargs is None:
                 barcode_kwargs = {}
-            # Do not let the caller override ax or coloring here
+            # Do not let the caller override ax here
             barcode_kwargs = {
                 k: v for k, v in barcode_kwargs.items()
-                if k not in {"ax", "coloring"}
+                if k not in {"ax"}
             }
             # Defaults for the barcode panel – user can override sort/title/xlabel
             barcode_kwargs = {
@@ -580,8 +582,6 @@ def _animate_filtration_generic(
                 "xlabel": "filtration value",
                 **barcode_kwargs,
             }
-            # Enforce *same* coloring as in plot_at_filtration
-            barcode_kwargs["coloring"] = plot_kwargs[coloring]
 
             forest.plot_barcode(
                 ax=ax_bar,
