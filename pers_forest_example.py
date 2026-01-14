@@ -3,29 +3,65 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import gudhi as gd
+
+# %%
+# Import PersistenceForest class
+# PersistenceForest contains methods for plotting barcodes, cycle representatives, and computing vectorisations based on cycle representatives
+# This is the central class of the LoopForest package
 from PersistenceForest import PersistenceForest
 
 
 # %%
+#generate example point cloud
 rng = np.random.default_rng(35)
 num_points=300
 points = rng.uniform(low=0.0, high=2*np.pi, size=num_points)
 points = np.sqrt(np.abs(np.cos(1.5*points))+.1)[:,None] * np.column_stack((np.cos(points), np.sin(points))) + rng.normal(scale=0.05, size=(num_points,2))
 
+print(points.shape)
+print(points[1])
+
 plt.figure(figsize=(6,6))
 plt.scatter( points[:,0], points[:,1], s = 3)
 plt.axis('equal')
 
-pers_forest = PersistenceForest(points, print_info=True)
+# %%
+# Compute PersistenceForest object from point cloud
+pers_forest = PersistenceForest(points)
 
 # %%
+# Plot barcode in codimension 1 with bars colored according to the forest structure
 pers_forest.plot_barcode(min_bar_length=0.01, coloring = "forest")
 
 # %%
+# Plot point cloud and active cycles at different filtration values
 pers_forest.plot_at_filtration(0.2)
 pers_forest.plot_at_filtration(0.6)
 pers_forest.plot_at_filtration(0.7)
+
+
 # %%
+#This cell showcases cycle representative extraction and plotting
+
+# Plot barcode and cycle representatives at relative position 0.1 in the barcode with arbitrarily colored bars
+pers_forest.plot_barcode(coloring="bars", sort = "birth", min_bar_length=0.01)
+pers_forest.plot_barcode_cycle_reps(relative_position=0.1, min_bar_length=0.05, figsize=(6,6), coloring="bars", linewidth_cycle=2)
+
+# extract cycle representatives at relative position 0.1
+# List[SignedChain], each SignedChain represents a cycle in the forest
+cycle_reps = pers_forest.barcode_cycle_reps(relative_position=0.1, min_bar_length=0.05)
+
+#transform cycle representatives from chain to list of vertex coordinates
+#forgets edge information, only keeps vertex coordinates
+cycle_reps_vertex_coords = [cycle.vertex_coordinates(point_cloud=pers_forest.point_cloud) for cycle in cycle_reps]
+
+print('Example of vertex cycle representatives coordinates')
+print(cycle_reps_vertex_coords)  #print first cycle representative as array of coordinates
+
+# %%
+# showcase of generalized landscape functionalities
+
+#import cycle functionals which map a (signed) cycle representative to a real number
 from cycle_rep_vectorisations import signed_chain_edge_length, constant_one_functional
 
 pers_forest.compute_generalized_landscape_family(
@@ -42,6 +78,7 @@ pers_forest.compute_generalized_landscape_family(
     label="1",
 )
 
+# Plot the two different landscape families
 pers_forest.plot_landscape_family(label='length', title = "Length Persistence Landscapes")
 pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landscapes")
 
@@ -49,15 +86,15 @@ pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landsc
 # %%
 from cycle_rep_vectorisations import signed_chain_excess_connected_components, signed_chain_area, signed_chain_connected_components, signed_chain_connected_components, signed_chain_excess_connected_components
 
+# New point cloud example
 double_edge_cloud = np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
 double_edge_forest.plot_at_filtration(15,show_orientation_arrows=True, figsize=(5,5))
 
 
-
 # %%
-
+# Showcase of signed vs unsigned chains
 double_edge_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_connected_components,
     max_k=6,
@@ -90,12 +127,14 @@ double_edge_forest.plot_landscape_comparison_between_functionals(labels=["signed
 
 
 # %%
+# Example of vectorisation of PersistenceForest objects using MultiLandscapeVectorizer
+
 from forest_landscapes import MultiLandscapeVectorizer
 # 1. define functions
 cycle_funcs = [signed_chain_edge_length]
 
-# 2. Collect LoopForest objects
-forests_train = [pers_forest]  # list of LoopForest, these need to be computed depending on the given task you are working in
+# 2. Collect PersistenceForest objects
+forests_train = [pers_forest]  # list of PersistenceForest, these need to be computed depending on the given task you are working in
 forests_test  = [pers_forest]
 
 # 3. Create the vectoriser

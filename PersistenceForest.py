@@ -377,6 +377,33 @@ class SignedChain:
                 raise ValueError("Path too short in SignedChain.polyhedral_path() method")
 
         return paths
+    
+    def vertex_coordinates(self, point_cloud: NDArray, signed = True) -> NDArray[np.float64]:
+        """
+        Extract the coordinates of the vertices in this SignedChain.
+
+        Parameters
+        ----------
+        point_cloud : ndarray, shape (n_points, dim)
+            Ambient point cloud.
+
+        Returns
+        -------
+        ndarray, shape (n_vertices, dim)
+            Coordinates of the vertices in the chain.
+        """
+        vertex_indices: Set[int] = set()
+        if signed: 
+            signed_simplices = self.signed_simplices
+        else:
+            signed_simplices = self.without_double_edges().signed_simplices
+
+        for signed_simplex in signed_simplices:
+            simplex, _ = signed_simplex
+            vertex_indices.update(simplex)
+
+        coords = np.array([point_cloud[i] for i in sorted(vertex_indices)], dtype=float)
+        return coords
 
 
 
@@ -1151,6 +1178,58 @@ class PersistenceForest:
         """
         return [bar for bar in self.barcode if (bar.birth<=filt_val and bar.death>filt_val)]
 
+    # ------ extract cycle representatives ---------
+
+    def cycle_reps_at(self, filt_val: float, min_bar_length:float = 0) -> List[SignedChain]:
+        """
+        Return the list of cycle representatives active at a given filtration value.
+
+        Parameters
+        ----------
+        filt_val : float
+            Filtration value at which to query.
+        min_bar_length : float
+            Minimum lifespan of bars to consider.
+
+        Returns
+        -------
+        list[SignedChain]
+            Cycle representatives active at ``filt_val``.
+        """
+        active_bars = self.active_bars_at(filt_val=filt_val)
+        cycles = [bar.cycle_at_filtration_value(filt_val=filt_val) for bar in active_bars if bar.lifespan()>=min_bar_length]
+        return cycles
+
+    def barcode_cycle_reps(self, relative_position=0.1, min_bar_length: float = 0) -> List[SignedChain]:
+        """
+        Return the list of cycle representatives for all bars in the barcode.
+
+        Parameters
+        ----------
+        relative_position : float
+            Relative position in the barcode (between 0 and 1).
+        min_bar_length : float
+            Minimum lifespan of bars to consider.
+
+        Returns
+        -------
+        list[SignedChain]
+            Cycle representatives for all bars in the barcode.
+        """
+        if relative_position < 0 or relative_position > 1:
+            raise ValueError("relative_position must be in [0,1]")
+
+        # Get all bars in the barcode
+        all_bars = sorted(list(self.barcode), key=lambda bar: bar.lifespan(), reverse=True)
+        
+        # Select bars based on relative position and minimum bar length
+        selected_bars = [bar for bar in all_bars if bar.lifespan() >= min_bar_length]
+        
+        # Compute cycle representatives for each selected bar
+        cycles = [bar.cycle_at_filtration_value(filt_val=bar.birth + (bar.lifespan() * relative_position)) for bar in selected_bars]
+        
+        return cycles
+
     # ------ generate color scheme  ---------
 
     def _build_color_map_forest(self, seed: Optional[int] = 39, start_color: Optional[str] = "#ff7f0e",):
@@ -1209,7 +1288,7 @@ class PersistenceForest:
         remove_double_edges: bool = False,
         show_cycles: bool = True,
         linewidth_filt: float = 0.6,
-        linewidth_cycle: float = 0.8,
+        linewidth_cycle: float = 1,
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -1592,6 +1671,166 @@ class PersistenceForest:
         #     ax.legend(loc="lower right", frameon=True)
 
         # ax.autoscale()
+        return ax
+
+    def plot_barcode_cycle_reps(
+        self,
+        min_bar_length: float = 0,
+        relative_position: float = 0.1,
+        ax=None,
+        show: bool = True,
+        figsize: tuple[float, float] = (7, 7), 
+        point_size: float = 3,
+        coloring: Literal['forest','bars'] = "forest",
+        title: Optional[str] = None,
+        show_orientation_arrows: bool = False,
+        remove_double_edges: bool = False,
+        linewidth_filt: float = 0.6,
+        linewidth_cycle: float = 0.8,
+    ):
+        """
+        Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
+        and overlay the loops of the nodes active at filt_val.
+
+        Notes
+        -----
+        - GUDHI's AlphaComplex / SimplexTree work
+        Pass the same units here.
+        - Uses SimplexTree.get_filtration(), which is sorted by increasing filtration.
+
+        Parameters
+        ----------
+        relative_position : float
+            Relative position in the barcode (between 0 and 1).
+        min_bar_length : float
+            Minimum lifespan of bars to consider.
+        ax : matplotlib.axes.Axes or None
+            Axes to draw on; if None, a new figure+axes are created.
+        show : bool
+            If True, calls plt.show() when done.
+        fill_triangles : bool
+            If True, lightly fill triangles present at this filtration.
+        figsize : tuple[float, float]
+            Figure size used when ``ax`` is None.
+        point_size : float
+            Marker size for point cloud.
+        coloring : {"forest","bars"}
+            Color scheme; builds the map on first use.
+        title : str | None
+            Title for the axes. Defaults to a filtration summary.
+        loop_edge_arrows : bool
+            If True, draw small arrows along each loop edge to indicate
+            the orientation of the cycle representatives.
+        remove_double_edges : bool
+            If True, cancel edges appearing with opposite orientations before
+            plotting.
+        show_cycles : bool
+            If True, overlay the active cycles at the filtration value.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if relative_position < 0 or relative_position > 1:
+            raise ValueError("relative_position must be in [0,1]")
+
+        if self.dim != 2:
+            raise ValueError("plot_barcode_cycle_reps only implemented for dimension 2")
+        
+        if coloring == "forest":
+            #built color map if it has not already been done
+            if not hasattr(self,"color_map_forest"):
+                self._build_color_map_forest()
+            color_map = self.color_map_forest
+        elif coloring == "bars":
+            if not hasattr(self,"color_map_bars"):
+                self._build_color_map_bars()
+            color_map = self.color_map_bars
+
+        # --- Prep
+        pts = np.asarray(self.point_cloud, dtype=float)
+        if pts.ndim != 2 or pts.shape[1] != 2:
+            raise ValueError("point_cloud must be an (n_points, 2) array-like.")
+
+        if ax is None:
+            _, ax = plt.subplots(figsize=figsize)
+
+
+        # --- Base scatter
+        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+
+        # --- Overlay loops from barcode representatives
+        for bar in self.barcode:
+            if bar.lifespan()>=min_bar_length:
+
+                cycle = bar.cycle_at_filtration_value(filt_val=bar.birth + bar.lifespan()*relative_position)    
+
+                # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
+                if remove_double_edges:
+                    segments = cycle.without_double_edges().segments(point_cloud=self.point_cloud)
+                else:
+                    segments = cycle.segments(point_cloud=self.point_cloud)
+
+                # Thicker colored edges along the loop
+                loop_coll = LineCollection(segments, linewidths=linewidth_cycle, colors=[color_map[bar]], zorder=5)
+                ax.add_collection(loop_coll)
+
+                # Optional arrows to show loop edge orientation
+                if show_orientation_arrows:
+                    for seg in segments:
+                        # seg is a 2x2 array: [start, end]
+                        (x0, y0), (x1, y1) = np.asarray(seg, dtype=float)
+
+                        dx = x1 - x0
+                        dy = y1 - y0
+                        length = float(np.hypot(dx, dy))
+                        if length == 0.0:
+                            continue  # skip degenerate segments
+
+                        # Place arrow around the middle of the segment, slightly shortened
+                        frac = 0.5  # fraction of the segment length used for the arrow body
+                        mx = 0.5 * (x0 + x1)
+                        my = 0.5 * (y0 + y1)
+
+                        # Direction unit vector
+                        ux = dx / length
+                        uy = dy / length
+
+                        half = 0.5 * frac * length
+                        x_start = mx - ux * half
+                        y_start = my - uy * half
+                        x_end   = mx + ux * half
+                        y_end   = my + uy * half
+
+                        ax.annotate(
+                            "",
+                            xy=(x_end, y_end),
+                            xytext=(x_start, y_start),
+                            arrowprops=dict(
+                                arrowstyle="-|>",
+                                linewidth=.2,
+                                color=color_map[bar],
+                                mutation_scale=6
+                            ),
+                            zorder=6,
+                    )
+
+        # --- Aesthetics
+        ax.set_aspect("equal", adjustable="box")
+        if title is None:
+            ax.set_title(fr"Barcode cycle representatives at relative position {relative_position:.2f}")
+        else:
+            ax.set_title(title)
+        #ax.set_xlabel("x")
+        #ax.set_ylabel("y")
+        # A simple legend (points + edges); loop colors are self-explanatory on top
+        #handles, labels = ax.get_legend_handles_labels()
+        #if handles:
+        #    ax.legend(loc="lower right", frameon=True)
+
+        ax.autoscale()  # fit collections
+        if show:
+            plt.show()
         return ax
 
 
