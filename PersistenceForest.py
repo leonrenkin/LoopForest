@@ -369,10 +369,10 @@ class SignedChain:
                 p_prev, p_cur = p_cur, np.asarray(point_cloud[cur_vertex], dtype=float)[:2]
                 prev_vec = p_cur - p_prev
 
-            paths.append(np.array(path_vertices, dtype=np.int32))
+            paths.append(np.array(path_vertices[:-1], dtype=np.int32)) #last vertex is repeated, remove it
 
         for path in paths:
-            if len(path)<=2:
+            if len(path)<2:
                 print(paths)
                 raise ValueError("Path too short in SignedChain.polyhedral_path() method")
 

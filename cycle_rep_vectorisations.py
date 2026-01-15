@@ -21,16 +21,10 @@ def _to_xy(points: Iterable[Tuple[float, float]]) -> np.ndarray:
     np.ndarray
         Array of shape ``(N, 2)`` with dtype float64.
 
-    Raises
-    ------
-    ValueError
-        If the input cannot be viewed as at least three 2D points.
     """
     P = np.asarray(points, dtype=float)
     if P.ndim != 2 or P.shape[1] != 2:
         raise ValueError("points must be an (N,2) array-like of x,y pairs")
-    if len(P) < 3:
-        raise ValueError("Need at least 3 distinct points for a polygon")
     if np.linalg.norm(P[0] - P[-1]) < _EPS:  # drop repeated closure point
         P = P[:-1].copy()
     return P
@@ -169,9 +163,7 @@ def polygon_length_squared_area_ratio(points: Iterable[Tuple[float, float]]) -> 
     """
     return (polygon_length(points=points)**2)/polygon_area(points=points)
 
-def total_curvature(points: Iterable[Tuple[float, float]],
-                    enforce_ccw: bool = True,
-                    ) -> float:
+def total_curvature(points: Iterable[Tuple[float, float]]) -> float:
     """
     Total curvature of a simple closed polygonal loop:
         K_total = sum_i |kappa_i|
@@ -192,8 +184,6 @@ def total_curvature(points: Iterable[Tuple[float, float]],
     Parameters
     ----------
     points : sequence of (x,y) defining a simple loop (last connects to first).
-    enforce_ccw : bool, optional
-        Currently kept for API compatibility; orientation is not altered.
 
     Returns
     -------
@@ -201,12 +191,6 @@ def total_curvature(points: Iterable[Tuple[float, float]],
         Total curvature (radians).
     """
     P = _to_xy(points)
-
-    """  # Orient CCW if requested (helps interpret the winding check).
-    signed_a = polygon_area(P, signed=True)
-    if enforce_ccw and signed_a < 0:
-        P = P[::-1].copy()
-        signed_a = -signed_a """
 
     prevP = np.roll(P, 1, axis=0)
     nextP = np.roll(P, -1, axis=0)
@@ -228,9 +212,9 @@ def total_curvature(points: Iterable[Tuple[float, float]],
     K = float(abs_kappa.sum())
     return K
 
-def curvature_excess(points: Iterable[Tuple[float, float]]) -> float:
+def curvature_excess(points: Iterable[Tuple[float, float]], normalize: bool = True) -> float:
     """
-    Normalized excess curvature: (total_curvature / 2π) - 1.
+    Excess curvature: total_curvature - 2π
 
     Returns 0 for a convex loop (total curvature ≈ 2π) and positive values
     for star-shaped or non-convex loops.
@@ -239,14 +223,18 @@ def curvature_excess(points: Iterable[Tuple[float, float]]) -> float:
     ----------
     points : iterable of (float, float)
         Polygon vertices.
+    normalize : bool, optional
+        If True, return excess curvature normalized by 2π.    
 
     Returns
     -------
     float
         Excess curvature normalized by 2π.
     """
-    K = total_curvature(points, enforce_ccw=True)
-    return K *(1.0/ (2*math.pi) )- 1.0
+    K = total_curvature(points) - 2.0*math.pi
+    if normalize:
+        K /= (2.0*math.pi)
+    return K 
 
 def signed_chain_edge_length(signed_chain, point_cloud: NDArray[np.float64]) -> float:
     """
@@ -368,7 +356,7 @@ def signed_chain_area(signed_chain, point_cloud:  NDArray[np.float64]) -> float:
     total_area = 0
 
     for index, path in enumerate(paths):
-        if len(path) <= 2:
+        if len(path) < 2:
             print(paths)
             raise ValueError("Paths too short")
         if index == index_max:
@@ -396,9 +384,35 @@ def signed_chain_excess_curvature(signed_chain, point_cloud: NDArray[np.float64]
     paths = list( signed_chain.polyhedral_paths(point_cloud) )
     total = 0
     for path in paths:
-        if len(path) <= 2:
+        if len(path) < 2:
             print(paths)
             raise ValueError("Paths too short")
-        total += curvature_excess(point_cloud[path])
+        total += curvature_excess(point_cloud[path], normalize=False)
+
+    return total
+
+def signed_chain_excess_curvature_normalized(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Sum of ``curvature_excess`` with normalized=True over every polyhedral path in the chain.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)``.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    float
+        Total normalized excess curvature across all paths.
+    """
+    paths = list( signed_chain.polyhedral_paths(point_cloud) )
+    total = 0
+    for path in paths:
+        if len(path) < 2:
+            print(paths)
+            raise ValueError("Paths too short")
+        total += curvature_excess(point_cloud[path], normalize=True)
 
     return total
