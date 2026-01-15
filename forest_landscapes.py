@@ -175,7 +175,7 @@ class PiecewiseLinearFunction:
     domain: Tuple[float, float]
     metadata: Dict[str, object] = field(default_factory=dict)
 
-    def __call__(self, x: Union[NDArray[np.float64], float]) -> Union[NDArray[np.float64], float]:
+    def __call__(self, x: Union[NDArray[np.float64], float]):
         """
         Evaluate the piecewise-linear function at one or many points.
 
@@ -203,6 +203,34 @@ class PiecewiseLinearFunction:
             return float(y_arr)
         return y_arr
 
+
+@dataclass
+class BarcodeFunctionals:
+    """
+    Container for per-bar step functions (StepFunctionData) for a fixed cycle_func.
+    Aligned with the bar ordering used in compute_generalized_landscape_family.
+    """
+    forest_id: str
+    label: str
+    baseline: float
+    bars: List[Any]  # PFBar or bar-like objects
+    step_functions: Dict[int, StepFunctionData]  # index -> StepFunctionData
+    extra_meta: Dict[str, Any] = field(default_factory=dict)
+
+    # built once for convenience
+    _bar_to_index: Dict[Any, int] = field(init=False, repr=False)
+
+    def __post_init__(self):
+        self._bar_to_index = {bar: i for i, bar in enumerate(self.bars)}
+
+    def get(self, bar_or_index: Union[int, Any]) -> StepFunctionData:
+        if isinstance(bar_or_index, int):
+            return self.step_functions[bar_or_index]
+        return self.step_functions[self._bar_to_index[bar_or_index]]
+
+    def __getitem__(self, bar_or_index: Union[int, Any]) -> StepFunctionData:
+        return self.get(bar_or_index)
+
 @dataclass
 class GeneralizedLandscapeFamily:
     """
@@ -213,7 +241,7 @@ class GeneralizedLandscapeFamily:
     - landscapes: k -> λ_k (k-th landscape) as PiecewiseLinearFunction
     """
     forest_id: str
-    func_name: str
+    label: str
     rescaling: str  # e.g. "raw" or "pyramid"
     x_grid: NDArray[np.float64]
     bar_kernels: Dict[int, PiecewiseLinearFunction]
@@ -419,6 +447,7 @@ class MultiLandscapeVectorizer:
         X_test  = vec.transform(test_forests)
     """
     cycle_funcs: List[CycleValueFunc]
+    labels: Optional[List[str]] = None
     max_k: int = 5
     num_grid_points: int = 256
     mode: Literal["raw", "pyramid"] = "pyramid"
@@ -427,8 +456,6 @@ class MultiLandscapeVectorizer:
     t_max: Optional[float] = None
     include_stats: bool = False
 
-    # derived
-    func_names: Optional[Sequence[str]] = None
 
     # fitted attributes
     x_grid_: Optional[NDArray[np.float64]] = field(init=False, default=None)
@@ -437,12 +464,14 @@ class MultiLandscapeVectorizer:
     n_features_: Optional[int] = field(init=False, default=None)
 
     def __post_init__(self):
-        """Derive default function names if none are supplied."""
-        if self.func_names is None:
-            self.func_names = [
+        """Derive default function labels if none are supplied."""
+        if self.labels is None:
+            self.labels = [
                 getattr(f, "__name__", f"func_{i}")
                 for i, f in enumerate(self.cycle_funcs)
             ]
+        if len(self.labels) != len(self.cycle_funcs):
+            raise ValueError("Length of labels must match length of cycle_funcs.")
 
     def fit(self, forests: Sequence) -> "MultiLandscapeVectorizer":
         """
@@ -509,6 +538,7 @@ class MultiLandscapeVectorizer:
         self,
         forest,
         f: CycleValueFunc,
+        label: str,
     ) -> NDArray[np.float64]:
         """
         Compute the feature block for one forest and one path function f.
@@ -530,6 +560,7 @@ class MultiLandscapeVectorizer:
 
         family = forest.compute_generalized_landscape_family(
             cycle_func=f,
+            label=label,
             max_k=self.max_k,
             num_grid_points=self.num_grid_points,
             mode=self.mode,
@@ -591,8 +622,8 @@ class MultiLandscapeVectorizer:
 
         for i, lf in enumerate(forests):
             blocks: List[NDArray[np.float64]] = []
-            for f in self.cycle_funcs:
-                block = self._vectorise_single_for_func(lf, f)
+            for f, label in zip(self.cycle_funcs, self.labels): # type: ignore
+                block = self._vectorise_single_for_func(lf, f, label)
                 blocks.append(block)
             X[i, :] = np.concatenate(blocks, axis=0)
 
@@ -681,6 +712,38 @@ def _build_step_function_data(
             },
         )
 
+def compute_barcode_functionals(
+    forest,
+    cycle_func: CycleValueFunc,
+    label: str,
+    *,
+    min_bar_length: float = 0.0,
+    baseline: float = 0.0,
+    cache: bool = True,
+) -> BarcodeFunctionals:
+
+    bars = [bar for bar in forest.barcode if (bar.death - bar.birth) >= min_bar_length]
+    step_functions: Dict[int, StepFunctionData] = {}
+
+    for i, bar in enumerate(bars):
+        sf = _build_step_function_data(forest=forest, bar=bar, cycle_func=cycle_func, baseline=baseline)
+        step_functions[i] = sf
+
+    bf = BarcodeFunctionals(
+        forest_id=getattr(forest, "id", str(id(forest))),
+        label=label,
+        baseline=baseline,
+        bars=bars,
+        step_functions=step_functions,
+        extra_meta={"min_bar_length": min_bar_length},
+    )
+
+    if cache:
+        key = label
+        forest.barcode_functionals[key] = bf
+
+    return bf
+
 def plot_barcode_measurement_generic(
         forest,
         cycle_func: CycleValueFunc,
@@ -717,8 +780,6 @@ def plot_barcode_measurement_generic(
         If given, set the y-limits to this range.
     title : str, optional
         Title for the axes. If None, a default title is constructed.
-    label : str, optional
-        Label for the curve (used in legend). If None, no legend is added.
     show : bool, default False
         Whether to call `plt.show()` after plotting.
 
@@ -738,7 +799,7 @@ def plot_barcode_measurement_generic(
 
     step_func = _build_step_function_data(forest=forest, bar=bar,cycle_func=cycle_func)
 
-    step_func.plot(x_range=x_range, y_range=y_range, ax= ax, title = title,show_baseline=show_baseline,label = label, **kwargs)
+    step_func.plot(x_range=x_range, y_range=y_range, ax= ax, title = title,show_baseline=show_baseline, **kwargs)
 
     if title is None:
         ax.set_title(f"{label} progression in max bar")
@@ -865,6 +926,7 @@ def compute_convolution_kernel_for_bar(
         cycle_func: CycleValueFunc,
         *,
         tol: float = 1e-12,
+        sf: Optional[StepFunctionData] = None,
     ) -> PiecewiseLinearFunction:
         """
         Use the existing build_convolution_with_indicator to compute
@@ -883,13 +945,19 @@ def compute_convolution_kernel_for_bar(
             Callable that assigns a scalar value to each cycle representative.
         tol : float, default 1e-12
             Numerical tolerance used when merging breakpoint events.
+        sf : StepFunctionData, optional
+            If given, reuse this step function instead of rebuilding it.
 
         Returns
         -------
         PiecewiseLinearFunction
             Piecewise-linear convolution kernel defined on the bar interval.
         """
-        sf = _build_step_function_data(forest=forest,bar=bar, cycle_func=cycle_func, baseline=0.0)
+        if sf is None:
+            sf = _build_step_function_data(forest=forest,
+                                           bar=bar, 
+                                           cycle_func=cycle_func, 
+                                           baseline=0.0)
 
         a, b = bar.birth, bar.death
         h, xs, ys = _build_convolution_with_indicator(
@@ -915,8 +983,6 @@ def compute_convolution_kernel_for_bar(
             domain=domain,
             metadata={
                 **sf.metadata,
-                ""
-                "func_name": getattr(cycle_func, "__name__", "anonymous"),
                 "kernel_type": "raw_convolution",
             },
         )
@@ -925,6 +991,7 @@ def compute_generalized_interval_landscape(
         forest,
         cycle_func: CycleValueFunc,
         bar,
+        sf: Optional[StepFunctionData] = None,
     ):
         """
         Helper that computes the (raw) convolution kernel g
@@ -942,6 +1009,8 @@ def compute_generalized_interval_landscape(
             Scalar-valued functional on cycle representatives.
         bar :
             Bar from the forest barcode; if None, `forest.max_bar()` is used.
+        sf : StepFunctionData, optional
+            If given, reuse this step function instead of rebuilding it.
 
         Returns
         -------
@@ -959,6 +1028,7 @@ def compute_generalized_interval_landscape(
             forest=forest,
             bar=bar,
             cycle_func=cycle_func,
+            sf=sf,
         )
 
         xs = kernel.xs.tolist()
@@ -976,6 +1046,7 @@ def compute_landscape_kernel_for_bar(
         *,
         mode: Literal["raw", "pyramid"] = "pyramid",
         tol: float = 1e-12,
+        sf: Optional[StepFunctionData] = None,
     ) -> PiecewiseLinearFunction:
         """
         Build the kernel used for landscapes for a single bar.
@@ -998,6 +1069,8 @@ def compute_landscape_kernel_for_bar(
             Whether to return the raw convolution or the pyramid-rescaled kernel.
         tol : float, default 1e-12
             Tolerance forwarded to the convolution helper.
+        sf : StepFunctionData, optional
+            If given, reuse this step function instead of rebuilding it.
 
         Returns
         -------
@@ -1009,6 +1082,7 @@ def compute_landscape_kernel_for_bar(
             bar=bar,
             cycle_func=cycle_func,
             tol=tol,
+            sf=sf,
         )
 
         if mode == "raw":
@@ -1047,14 +1121,17 @@ def compute_landscape_kernel_for_bar(
 def compute_generalized_landscape_family(
         forest,
         cycle_func: CycleValueFunc,
+        label: str,
         *,
         max_k: int = 5,
         num_grid_points: int = 512,
         mode: Literal["raw", "pyramid"] = "pyramid",
-        label: Optional[str] = None,
         min_bar_length: float = 0.0,
         x_grid: Optional[NDArray[np.float64]] = None,
         cache: bool = True,
+        cache_functionals: bool = False,
+        functionals_label: Optional[str] = None,
+        compute_functionals: bool = True,
     ) -> GeneralizedLandscapeFamily:
         """
         Compute the generalized landscape family for this LoopForest for a given
@@ -1082,6 +1159,14 @@ def compute_generalized_landscape_family(
             Optional fixed grid on which to evaluate the landscapes.
         cache:
             Decides if landscapes is saved to forest or only returned.
+        compute_functionals:
+            If True, compute barcode functionals.
+            If False, reuse cached functionals with the given label.
+        cache_functionals:
+            If True, cache computed barcode functionals on the forest.
+        functinonals_label:
+            Label used to cache/retrieve barcode functionals.
+            If None, uses `label`.
 
         Returns
         -------
@@ -1104,6 +1189,34 @@ def compute_generalized_landscape_family(
             )
 
         # 2. Compute kernels for each bar
+        if functionals_label is None:
+            functionals_label = label
+        if cache_functionals is None:
+            cache_functionals = cache
+
+        if not compute_functionals:
+            bf =forest.barcode_functionals.get(functionals_label, None)
+            if bf is None:
+                raise ValueError(
+                    f"Requested to reuse cached barcode functionals "
+                    f"with label '{functionals_label}', but none found."
+                )
+        else:
+            bf = compute_barcode_functionals(
+                forest=forest,
+                cycle_func=cycle_func,
+                label=functionals_label,
+                min_bar_length=min_bar_length,
+                cache=cache_functionals,
+            )
+
+        if cache_functionals and not compute_functionals:
+            # Ensure cached functionals are available
+            if not hasattr(forest, "barcode_functionals"):
+                forest.barcode_functionals = {}
+            key = functionals_label
+            forest.barcode_functionals[key] = bf
+
         bar_kernels: Dict[int, PiecewiseLinearFunction] = {}
         global_min_x = float("inf")
         global_max_x = float("-inf")
@@ -1114,6 +1227,7 @@ def compute_generalized_landscape_family(
                 bar,
                 cycle_func,
                 mode=mode,
+                sf=bf[bar] #access precomputed step function for this bar
             )
             bar_kernels[i] = kernel
 
@@ -1162,7 +1276,6 @@ def compute_generalized_landscape_family(
                 domain=(float(x_grid[0]), float(x_grid[-1])),
                 metadata={
                     "k": k,
-                    "func_name": getattr(cycle_func, "__name__", "anonymous"),
                     "mode": mode,
                     "min_bar_length": min_bar_length,
                 },
@@ -1173,7 +1286,7 @@ def compute_generalized_landscape_family(
 
         family = GeneralizedLandscapeFamily(
             forest_id=forest_id,
-            func_name=getattr(cycle_func, "__name__", "anonymous"),
+            label=label,
             rescaling=mode,
             x_grid=x_grid,
             bar_kernels=bar_kernels,
@@ -1191,7 +1304,7 @@ def compute_generalized_landscape_family(
             if not hasattr(forest, "landscape_families"):
                 forest.landscape_families = {}
 
-            key = label or family.func_name
+            key = label
             forest.landscape_families[key] = family
 
         return family

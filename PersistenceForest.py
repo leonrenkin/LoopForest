@@ -1,6 +1,6 @@
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Literal, Iterable, Callable, Union, Sequence, Set
+from typing import Any, Dict, List, Optional, Tuple, Literal, Iterable, Callable, Union, Sequence, Set
 from collections import defaultdict
 from numpy.typing import NDArray
 import itertools
@@ -633,6 +633,9 @@ class PersistenceForest:
             print(f"Filtration processed in {filtration_time}")
 
         self.barcode: set[PFBar] = set()
+
+        self.landscape_families: Dict[str, Any] = {}
+        self.barcode_functionals: Dict[str, Any] = {}
 
         #compute forest
         if compute:
@@ -2089,15 +2092,18 @@ class PersistenceForest:
     def compute_generalized_landscape_family(
         self,
         cycle_func,
+        label: str,
         *,
         max_k: int = 5,
         num_grid_points: int = 512,
         mode: Literal["raw", "pyramid"] = "pyramid",
-        label: Optional[str] = None,
         min_bar_length: float = 0.0,
         x_grid: Optional[NDArray[np.float64]] = None,
         cache: bool = True,
         signed: bool = True,
+        cache_functionals: bool = False,
+        functionals_label: Optional[str] = None,
+        compute_functionals: bool = True,
     ):
         """
         Compute a generalized landscape family for this PersistenceForest.
@@ -2111,14 +2117,14 @@ class PersistenceForest:
 
             where ``chain`` is a SignedChain. This lets you define arbitrary
             functionals on cycles (e.g. total length, mass, etc.).
+        label : str
+            label/ID for this forest (stored in the family metadata).
         max_k : int
             Number of landscape levels λ_1..λ_max_k.
         num_grid_points : int, optional
             Number of x-grid samples (if x_grid is None).
         mode : {"raw", "pyramid"}, optional
             Kernel mode; "pyramid" matches the LoopForest convention.
-        label : str | None, optional
-            Optional label/ID for this forest (stored in the family metadata).
         min_bar_length : float, optional
             Ignore bars with lifespan < min_bar_length.
         x_grid : np.ndarray | None, optional
@@ -2154,7 +2160,10 @@ class PersistenceForest:
             label=label,
             min_bar_length=min_bar_length,
             x_grid=x_grid,
-            cache = cache
+            cache = cache,
+            cache_functionals=cache_functionals,
+            functionals_label=functionals_label,
+            compute_functionals=compute_functionals,
         )
 
     def plot_landscape_family(
