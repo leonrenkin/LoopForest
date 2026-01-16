@@ -43,11 +43,13 @@ class StepFunctionData:
     """
     Representation of a piecewise-constant function:
 
-    f(t) = vals[i]  on [starts[i], ends[i]]
+    f(t) = vals[i]  on [starts[i], ends[i])
          = baseline elsewhere.
 
     All arrays are 1D and aligned by index. `domain` is the global range
     where the function is potentially non-zero (for convenience).
+
+    We assume that ends[i] = starts[i+1] for all i, i.e., no gaps or overlaps between intervals.
     """
     starts: NDArray[np.float64]
     ends: NDArray[np.float64]
@@ -120,9 +122,9 @@ class StepFunctionData:
         if len(xs_unique) < 2:
             xs_unique = [xmin, xmax]
 
-        def _value_at(t: float) -> float:
+        def _value_at(t: float) -> float:                               #this is a correct but inefficient way to do it since we do not allow overlaping intervals, fix later
             """Evaluate the step function at a single point t."""
-            mask = (starts <= t) & (t <= ends)
+            mask = (starts <= t) & (t < ends)
             if not np.any(mask):
                 return float(self.baseline)
             idx = np.nonzero(mask)[0]
@@ -162,6 +164,50 @@ class StepFunctionData:
             ax.set_title(title)
 
         return ax
+    
+    def eval_on_grid(self, x_grid: NDArray[np.float64]) -> NDArray[np.float64]:
+        """
+        Evaluate the step function on a given grid of points.
+
+        Parameters
+        ----------
+        x_grid : numpy.ndarray
+            1D array of points at which to evaluate the function.
+            must be non-empty and sorted in non-decreasing order.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of function values at the provided grid points.
+        """
+        if x_grid.size == 0:
+            raise ValueError("x_grid must be non-empty")
+        if not np.all(np.isfinite(x_grid)):
+            raise ValueError("x_grid contains non-finite values")
+        if np.any(np.diff(x_grid) < 0):
+            raise ValueError("x_grid must be sorted in non-decreasing order")
+
+        x_grid = np.asarray(x_grid, dtype=float).ravel()
+        y_vals = np.full_like(x_grid, fill_value=self.baseline, dtype=float)
+
+        if self.starts.size == 0:
+            return np.full_like(x_grid, fill_value=float(self.baseline), dtype=float)
+        if not (self.starts.size == self.ends.size == self.vals.size):
+            raise ValueError("starts, ends, vals must have the same length")
+
+        i = 0
+        for j,x in enumerate(x_grid):
+            if x < self.starts[0]:
+                continue
+            if x >= self.ends[-1]:
+                break
+
+            while i < self.starts.size and x >= self.ends[i]:
+                i += 1
+            if i < self.starts.size and self.starts[i] <= x < self.ends[i]:
+                y_vals[j] = self.vals[i]
+
+        return y_vals
 
 @dataclass
 class PiecewiseLinearFunction:
@@ -230,6 +276,53 @@ class BarcodeFunctionals:
 
     def __getitem__(self, bar_or_index: Union[int, Any]) -> StepFunctionData:
         return self.get(bar_or_index)
+    
+    def evaluate_on_grid(
+        self,
+        x_grid: NDArray[np.float64],
+        bars: Optional[Sequence[Union[int, Any]]] = None,
+    ) -> NDArray[np.float64]:
+        """Evaluate stored per-bar step functions on a common grid.
+
+        Parameters
+        ----------
+        x_grid:
+            One-dimensional, monotonically non-decreasing sample grid.
+        bars:
+            Optional subset of bars (bar objects) or indices to evaluate.
+            If omitted, evaluates for all bars in `self.bars` order.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape (B, G) where G=len(grid) and B is the number of
+            requested bars.
+        """
+        grid_arr = np.asarray(x_grid, dtype=float).ravel()
+        if grid_arr.size == 0:
+            raise ValueError("grid must be non-empty")
+        if not np.all(np.isfinite(grid_arr)):
+            raise ValueError("grid contains non-finite values")
+        if np.any(np.diff(grid_arr) < 0):
+            raise ValueError("grid must be sorted in non-decreasing order")
+
+        if bars is None:
+            indices = list(range(len(self.bars)))
+        else:
+            indices = []
+            for b in bars:
+                if isinstance(b, int):
+                    indices.append(b)
+                else:
+                    indices.append(self._bar_to_index[b])
+
+        out = np.empty((len(indices), grid_arr.size), dtype=float)
+        for row, idx in enumerate(indices):
+            if idx not in self.step_functions:
+                raise KeyError(f"No StepFunctionData stored for bar index {idx}")
+            out[row, :] = self.step_functions[idx].eval_on_grid(grid_arr)
+
+        return out
 
 @dataclass
 class GeneralizedLandscapeFamily:
@@ -240,14 +333,65 @@ class GeneralizedLandscapeFamily:
     - bar_kernels: per-bar kernels (typically already rescaled if mode="pyramid")
     - landscapes: k -> λ_k (k-th landscape) as PiecewiseLinearFunction
     """
-    forest_id: str
+    forest_id: str 
     label: str
-    rescaling: str  # e.g. "raw" or "pyramid"
+    rescaling: str  # "raw" or "pyramid", where "pyramid" is default
     x_grid: NDArray[np.float64]
     bar_kernels: Dict[int, PiecewiseLinearFunction]
     landscapes: Dict[int, PiecewiseLinearFunction]
     extra_meta: Dict[str, object] = field(default_factory=dict)
-    # Optional back-reference for interactive use; safe to ignore for serialization
+    
+    def evaluate_on_grid(
+        self,
+        grid: NDArray[np.float64],
+        levels: Union[int, Sequence[int]] = 1,
+        *,
+        fill_value: float = 0.0,
+    ) -> NDArray[np.float64]:
+        """Evaluate selected generalized landscape levels on a common grid.
+
+        Parameters
+        ----------
+        grid:
+            One-dimensional, monotonically non-decreasing sample grid.
+        levels:
+            If an int m is given, evaluates levels k=1..m. If a sequence is
+            given, evaluates those k-values in the provided order.
+        fill_value:
+            Value used when a requested landscape level is unavailable.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape (L, G) where G=len(grid) and L is the number of
+            requested levels.
+        """
+        grid_arr = np.asarray(grid, dtype=float).ravel()
+        if grid_arr.size == 0:
+            raise ValueError("grid must be non-empty")
+        if not np.all(np.isfinite(grid_arr)):
+            raise ValueError("grid contains non-finite values")
+        if np.any(np.diff(grid_arr) < 0):
+            raise ValueError("grid must be sorted in non-decreasing order")
+
+        if isinstance(levels, int):
+            if levels < 1:
+                raise ValueError("levels must be >= 1")
+            ks = list(range(1, levels + 1))
+        else:
+            ks = [int(k) for k in levels]
+            if any(k < 1 for k in ks):
+                raise ValueError("all requested landscape levels must be >= 1")
+
+        out = np.full((len(ks), grid_arr.size), float(fill_value), dtype=float)
+        for i, k in enumerate(ks):
+            f = self.landscapes.get(k)
+            if f is None:
+                continue
+            out[i, :] = np.asarray(f(grid_arr), dtype=float) # evaluate landscape f on grid with method __call__ in PiecewiseLinearFunction
+
+        return out
+
 
 @dataclass
 class LandscapeVectorizer:

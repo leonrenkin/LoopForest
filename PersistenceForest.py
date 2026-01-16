@@ -514,64 +514,6 @@ class PFBar:
         """Returns lifespan of bar"""
         return self.death - self.birth
     
-@dataclass
-class StepFunctionData:
-    """
-    Representation of a piecewise-constant function:
-
-    f(t) = vals[i]  on [starts[i], ends[i]]
-         = baseline elsewhere.
-
-    All arrays are 1D and aligned by index. `domain` is the global range
-    where the function is potentially non-zero (for convenience).
-    """
-    starts: NDArray[np.float64]
-    ends: NDArray[np.float64]
-    vals: NDArray[np.float64]
-    baseline: float
-    domain: Tuple[float, float]
-    metadata: Dict[str, object] = field(default_factory=dict)
-
-@dataclass
-class PiecewiseLinearFunction:
-    """
-    Piecewise-linear function specified by breakpoints (xs, ys).
-    Between xs[i] and xs[i+1] the function is linear. Outside [xs[0], xs[-1]]
-    the function evaluates to 0.0 by default.
-    """
-    xs: NDArray[np.float64]
-    ys: NDArray[np.float64]
-    domain: Tuple[float, float]
-    metadata: Dict[str, object] = field(default_factory=dict)
-
-    def __call__(self, x: Union[NDArray[np.float64], float]) -> Union[NDArray[np.float64], float]:
-        """
-        Evaluate the piecewise-linear function at scalar or array inputs.
-
-        Parameters
-        ----------
-        x : float or ndarray
-            Points where the function is evaluated.
-
-        Returns
-        -------
-        float or ndarray
-            Interpolated values with 0.0 outside the function domain.
-        """
-        if self.xs.size == 0:
-            if np.isscalar(x):
-                return 0.0
-            x_arr = np.asarray(x, dtype=float)
-            return np.zeros_like(x_arr)
-
-        x_arr = np.asarray(x, dtype=float)
-        y_arr = np.interp(x_arr, self.xs, self.ys, left=0.0, right=0.0)
-
-        if np.isscalar(x):
-            # np.interp returns a scalar np.ndarray for scalar input
-            return float(y_arr)
-        return y_arr
-
 class PersistenceForest:
     """Object that computes and stores progression of optimal cycles for alpha complex of a point cloud in a forest format."""
 
@@ -1161,9 +1103,13 @@ class PersistenceForest:
     
         return
          
-    def max_bar(self):
+    def max_bar(self)-> PFBar:
         """Return the bar with the longest lifespan."""
         return max(self.barcode, key=lambda bar: bar.lifespan())
+    
+    def longest_bars(self,k:int) -> List[PFBar]:
+        """Return the k bars with the longest lifespan in descending order."""
+        return sorted(self.barcode, key=lambda bar: bar.lifespan(), reverse=True)[0:k]
     
     def active_bars_at(self, filt_val:float):
         """
