@@ -49,7 +49,7 @@ plt.rcParams.update({
 import numpy as np
 
 # Local imports
-from PersistenceForest import PersistenceForest
+from loopforest.PersistenceForest import PersistenceForest
 from point_cloud_sampling import (
     sample_noisy_circle,
     sample_uniform_points,

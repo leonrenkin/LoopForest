@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional, Tuple, Literal, Iterable, Callable
 from collections import defaultdict
 from numpy.typing import NDArray
 import itertools
-import numpy as np
 import gudhi as gd
 import math
 import numpy as np
@@ -404,7 +403,6 @@ class SignedChain:
 
         coords = np.array([point_cloud[i] for i in sorted(vertex_indices)], dtype=float)
         return coords
-
 
 
 @dataclass(slots=True)
@@ -1196,7 +1194,7 @@ class PersistenceForest:
             Preferred color to start the palette with (hex).
         """
 
-        from color_scheme import color_map_for_bars
+        from .color_scheme import color_map_for_bars
 
         ordered_bars = sorted(list(self.barcode), key= lambda bar: bar.lifespan(), reverse=True)
 
@@ -1797,7 +1795,7 @@ class PersistenceForest:
             Forwarded to ``forest_plotting._plot_dendrogram_generic``. Common
             options include ``ax``, ``coloring``, and ``show``.
         """
-        from forest_plotting import _plot_dendrogram_generic
+        from .forest_plotting import _plot_dendrogram_generic
         return _plot_dendrogram_generic(self, *args, **kwargs)
 
     def plot_barcode(self, *args, **kwargs):
@@ -1835,7 +1833,7 @@ class PersistenceForest:
         ax : matplotlib.axes.Axes
             The axes the barcode was drawn on.
         """
-        from forest_plotting import _plot_barcode_generic
+        from .forest_plotting import _plot_barcode_generic
 
         return _plot_barcode_generic(self, *args,**kwargs)
 
@@ -1899,7 +1897,7 @@ class PersistenceForest:
         fig : matplotlib.figure.Figure
             The figure on which the animation is drawn.
         """
-        from forest_plotting import _animate_filtration_generic
+        from .forest_plotting import _animate_filtration_generic
         return _animate_filtration_generic(self, with_barcode=with_barcode,filename=filename, *args, **kwargs)
 
     def animate_barcode_measurement(
@@ -1946,7 +1944,7 @@ class PersistenceForest:
             :class:`matplotlib.animation.FuncAnimation` and ``fig`` is the
             underlying figure.
         """
-        from forest_landscapes import animate_barcode_measurement_generic
+        from .forest_landscapes import animate_barcode_measurement_generic
 
         if signed:
             def _cycle_value(chain, point_cloud):
@@ -2009,7 +2007,7 @@ class PersistenceForest:
             Forwarded to ``StepFunctionData.plot`` (e.g., ``baseline_kwargs``,
             line color/linewidth, etc.).
         """
-        from forest_landscapes import plot_barcode_measurement_generic
+        from .forest_landscapes import plot_barcode_measurement_generic
 
         if signed:
             def _cycle_value(chain, point_cloud):
@@ -2095,7 +2093,7 @@ class PersistenceForest:
     
             
 
-        from forest_landscapes import compute_generalized_landscape_family
+        from .forest_landscapes import compute_generalized_landscape_family
 
         return compute_generalized_landscape_family(
             self,
@@ -2135,7 +2133,7 @@ class PersistenceForest:
         title : str | None
             Custom plot title.
         """
-        from forest_landscapes import plot_landscape_family
+        from .forest_landscapes import plot_landscape_family
         return plot_landscape_family(self, label, ks=ks, ax=ax, title=title, *args, **kwargs)
 
     def plot_landscape_comparison_between_functionals(
@@ -2161,7 +2159,7 @@ class PersistenceForest:
         title : str | None
             Custom plot title.
         """
-        from forest_landscapes import plot_landscape_comparison_between_functionals
+        from .forest_landscapes import plot_landscape_comparison_between_functionals
         return plot_landscape_comparison_between_functionals(self, labels=labels, k=k, ax=ax, title=title, *args, **kwargs)
 
 # --------- Animate comparison ------------

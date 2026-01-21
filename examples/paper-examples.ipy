@@ -1,8 +1,8 @@
 #%%
 import numpy as np
 import matplotlib.pyplot as plt
-from LoopForest import LoopForest
-from PersistenceForest import PersistenceForest
+from loopforest.LoopForest import LoopForest
+from loopforest.PersistenceForest import PersistenceForest
 import seaborn as sns
 from matplotlib.patches import Rectangle, Circle
 
@@ -27,7 +27,7 @@ plt.rcParams.update({
 
 
 #%%
-double_edge_cloud =np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1)
+double_edge_cloud =np.loadtxt("../point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1)
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
 double_edge_cloud_disconnected = np.concatenate((double_edge_cloud[:1], double_edge_cloud[2:]))
@@ -73,10 +73,10 @@ plt.show()
 
 
 # %% Example: Connected vs Disconnected Islands
-from cycle_rep_vectorisations import signed_chain_excess_connected_components
-from forest_landscapes import plot_landscape_comparison
+from loopforest.cycle_rep_vectorisations import signed_chain_excess_connected_components
+from loopforest.forest_landscapes import plot_landscape_comparison
 
-connected_islands_cloud = np.loadtxt("point_cloud_csvs/circle_with_connected_inner_islands.csv",  delimiter=",", skiprows=1) *100
+connected_islands_cloud = np.loadtxt("../point_cloud_csvs/circle_with_connected_inner_islands.csv",  delimiter=",", skiprows=1) *100
 disconnected_islands_cloud = connected_islands_cloud[:-7]  #remove points to disconnect inner islands
 
 connected_islands_forest = PersistenceForest( connected_islands_cloud )
@@ -182,7 +182,7 @@ fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300
 # %% Example: Point clouds with barcodes
 
 from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril, sample_noisy_star_pointy
-from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
+from loopforest.cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
 
 n_points = 1000
 
@@ -223,7 +223,7 @@ fig.savefig('paper_figures/point_clouds_with_barcodes.pdf', transparent=True, dp
 plt.show()
 
 # %% Example: Measurement comparisons
-from cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
+from loopforest.cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
 fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 1.5), sharex='col', layout='constrained')
 
 cycle_funcs_list = [
@@ -245,7 +245,7 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     axes[0, i].set_ylim(bottom=0) 
     axes[0, i].grid(False)
 
-from forest_landscapes import plot_landscape_comparison
+from loopforest.forest_landscapes import plot_landscape_comparison
 
 forests = [forest for _, forest in name_forest_list]
 forest_labels = [name for name, _ in name_forest_list]

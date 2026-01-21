@@ -1363,7 +1363,7 @@ class LoopForest:
         Seed for randomness
         """
 
-        from color_scheme import color_map_for_bars
+        from .color_scheme import color_map_for_bars
 
         ordered_bars = sorted(list(self.barcode), key= lambda bar: bar.lifespan(), reverse=True)
 
