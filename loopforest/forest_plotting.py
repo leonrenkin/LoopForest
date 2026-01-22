@@ -505,7 +505,7 @@ def _animate_filtration_generic(
                 plot_kwargs=dict(
                     fill_triangles=True,
                     loop_vertex_markers=False,
-                    point_size=3,
+                    vertex_size=3,
                     coloring="forest",
                 )
         barcode_kwargs : dict | None, optional
@@ -547,7 +547,7 @@ def _animate_filtration_generic(
         # Reasonable defaults (only used if not explicitly overridden)
         plot_kwargs = {
             "fill_triangles": True,
-            "point_size": 3,
+            "vertex_size": 3,
             "coloring": coloring,
             "show": False,   # important: we manage the figure ourselves
             **plot_kwargs,
@@ -786,7 +786,7 @@ def animate_filtration_pair(
     base_plot_kwargs = {
         "fill_triangles": True,
         "loop_vertex_markers": False,
-        "point_size": 3,
+        "vertex_size": 3,
         "coloring": "forest",  # uses the forest's color dict, shared with barcode
         "show": False,         # we manage figure/axes ourselves
     }

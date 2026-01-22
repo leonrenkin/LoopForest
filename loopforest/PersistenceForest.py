@@ -404,7 +404,6 @@ class SignedChain:
         coords = np.array([point_cloud[i] for i in sorted(vertex_indices)], dtype=float)
         return coords
 
-
 @dataclass(slots=True)
 class PFNode:
     """ Objects which are the nodes in the LoopForest graph. 
@@ -1228,14 +1227,14 @@ class PersistenceForest:
         show: bool = True,
         fill_triangles: bool = True,
         figsize: tuple[float, float] = (7, 7), 
-        point_size: float = 3,
+        vertex_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
         show_orientation_arrows: bool = False,
         remove_double_edges: bool = False,
         show_cycles: bool = True,
         linewidth_filt: float = 0.6,
-        linewidth_cycle: float = 1,
+        linewidth_cycle: float = 1.8,
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -1259,7 +1258,7 @@ class PersistenceForest:
             If True, lightly fill triangles present at this filtration.
         figsize : tuple[float, float]
             Figure size used when ``ax`` is None.
-        point_size : float
+        vertex_size : float
             Marker size for point cloud.
         coloring : {"forest","bars"}
             Color scheme; builds the map on first use.
@@ -1315,12 +1314,21 @@ class PersistenceForest:
                 tris_xy.append([pts[i], pts[j], pts[k]])
 
         # --- Base scatter
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+        ax.scatter(
+            pts[:, 0], 
+            pts[:, 1],
+            s=vertex_size, 
+            color="k", 
+            label="points",
+            marker="o",
+            edgecolors="none",
+            zorder=2.8
+        )
 
         # --- Draw triangles first (under edges)
         if fill_triangles and tris_xy:
             tri_coll = PolyCollection(
-                tris_xy, closed=True, edgecolors="none", facecolors="C0", alpha=0.15, zorder=1
+                tris_xy, closed=True, edgecolors="none", facecolors="C0", alpha=0.2, zorder=1
             )
             ax.add_collection(tri_coll)
 
@@ -1412,9 +1420,15 @@ class PersistenceForest:
         ax=None,
         fill_triangles: bool = True,
         figsize: tuple[float, float] = (7, 7),
-        point_size: float = 3,
+        vertex_size: float = 12,
         coloring: Literal['forest','bars'] = "forest",
-        dual_vertex_size: float = 26,
+        dual_vertex_size: float = 12,
+        show_cycles: bool = True,
+        linewidth_filt: float = 0.6,
+        linewidth_cycle: float = 1.8,
+        linewidth_dual_edge: float = 0.4,
+        show_dual: bool = True,
+        show: bool = True,
     ):
         """
         Plot primal and dual edges of the alpha complex at a filtration value.
@@ -1429,12 +1443,24 @@ class PersistenceForest:
             If True, fill triangles that are present at or before filt_val.
         figsize : tuple[float, float]
             Size of the figure if ax is None.
-        point_size : float
+        vertex_size : float
             Marker size for input points.
         coloring : {"forest","bars"}
             Color scheme to use for active cycles.
         dual_vertex_size : float
             Marker size for dual vertices.
+        show_cycles : bool
+            If True, overlay the active cycles at the filtration value.
+        linewidth_filt : float
+            Line width for primal edges.
+        linewidth_cycle : float
+            Line width for cycle edges.
+        linewidth_dual_edge : float
+            Line width for dual edges.
+        show_dual: bool
+            If True, overlay the dual edges and dual vertices.  
+        show : bool
+            If True, calls plt.show() when done.
 
         Returns
         -------
@@ -1522,7 +1548,16 @@ class PersistenceForest:
             else:
                 dual_edges_future.append(segment)
 
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+        ax.scatter(
+            pts[:, 0], 
+            pts[:, 1],
+            s=vertex_size, 
+            color="k", 
+            label="points",
+            marker="o",
+            edgecolors="none",
+            zorder=2.8
+        )
 
         if fill_triangles and tris_present:
             tri_coll = PolyCollection(
@@ -1530,7 +1565,7 @@ class PersistenceForest:
                 closed=True,
                 edgecolors="none",
                 facecolors="C0",
-                alpha=0.28,
+                alpha=0.2,
                 zorder=1,
             )
             ax.add_collection(tri_coll)
@@ -1550,12 +1585,12 @@ class PersistenceForest:
         #         label="dual vertices (pending)",
         #     )
 
-        if dual_vertices_present:
+        if dual_vertices_present and show_dual:
             present_arr = np.array(dual_vertices_present)
             ax.scatter(
                 present_arr[:, 0],
                 present_arr[:, 1],
-                s=dual_vertex_size * 0.75,
+                s=dual_vertex_size,
                 c="C3",
                 marker="o",
                 edgecolors="none",
@@ -1565,7 +1600,7 @@ class PersistenceForest:
         if edges_future:
             future_edge_coll = LineCollection(
                 edges_future,
-                linewidths=0.9,
+                linewidths=linewidth_filt,
                 colors="0.45",
                 alpha=0.5,
                 zorder=1.6,
@@ -1575,41 +1610,43 @@ class PersistenceForest:
         if edges_present:
             edge_coll = LineCollection(
                 edges_present,
-                linewidths=0.9,
-                colors="0",
+                linewidths=linewidth_filt,
+                colors="0.3",
                 zorder=2,
                 label="edges",
             )
             ax.add_collection(edge_coll)
 
-        if dual_edges_future:
-            dual_thin_coll = LineCollection(
-                dual_edges_future,
-                colors="C3",
-                linewidths=0.5,
-                alpha=0.5,
-                linestyle="dotted",
-                zorder=3.6,
-            )
-            ax.add_collection(dual_thin_coll)
+        if show_dual:
+            if dual_edges_future:
+                dual_thin_coll = LineCollection(
+                    dual_edges_future,
+                    colors="C3",
+                    linewidths=linewidth_dual_edge,
+                    alpha=0.5,
+                    linestyle="dotted",
+                    zorder=3.6,
+                )
+                ax.add_collection(dual_thin_coll)
 
-        if dual_edges_present:
-            dual_thick_coll = LineCollection(
-                dual_edges_present,
-                colors="C3",
-                linewidths=0.5,
-                alpha=1,
-                zorder=4,
-                label="dual edges",
-            )
-            ax.add_collection(dual_thick_coll)
+            if dual_edges_present:
+                dual_thick_coll = LineCollection(
+                    dual_edges_present,
+                    colors="C3",
+                    linewidths=linewidth_dual_edge,
+                    alpha=1,
+                    zorder=4,
+                    label="dual edges",
+                )
+                ax.add_collection(dual_thick_coll)
 
-        for bar in self.barcode:
-            if filt_val >= bar.birth and filt_val < bar.death:
-                cycle = bar.cycle_at_filtration_value(filt_val=filt_val)
-                segments = [np.array(pts[list(signed_simplex[0])]) for signed_simplex in cycle.signed_simplices]    
-                loop_coll = LineCollection(segments, linewidths=1.8, colors=[color_map[bar]], zorder=5)
-                ax.add_collection(loop_coll)
+        if show_cycles:
+            for bar in self.barcode:
+                if filt_val >= bar.birth and filt_val < bar.death:
+                    cycle = bar.cycle_at_filtration_value(filt_val=filt_val)
+                    segments = [np.array(pts[list(signed_simplex[0])]) for signed_simplex in cycle.signed_simplices]    
+                    loop_coll = LineCollection(segments, linewidths=linewidth_cycle, colors=[color_map[bar]], zorder=5)
+                    ax.add_collection(loop_coll)
 
         ax.set_aspect("equal", adjustable="box")
         ax.set_title(f"α = {filt_val:.4g}")
@@ -1618,6 +1655,10 @@ class PersistenceForest:
         #     ax.legend(loc="lower right", frameon=True)
 
         # ax.autoscale()
+
+        if show:
+            plt.show()
+
         return ax
 
     def plot_barcode_cycle_reps(
