@@ -1392,7 +1392,7 @@ def compute_generalized_landscape_family(
                 cache=cache_functionals,
             )
 
-        if cache_functionals and not compute_functionals:
+        if cache_functionals and compute_functionals:
             # Ensure cached functionals are available
             if not hasattr(forest, "barcode_functionals"):
                 forest.barcode_functionals = {}
