@@ -17,3 +17,4 @@ presentation_plots.py
 presentation_figures
 latex/
 point_cloud_generator.py
+examples/point_cloud_generator.py
