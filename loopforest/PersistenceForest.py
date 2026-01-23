@@ -1649,7 +1649,7 @@ class PersistenceForest:
                     ax.add_collection(loop_coll)
 
         ax.set_aspect("equal", adjustable="box")
-        ax.set_title(f"α = {filt_val:.4g}")
+        ax.set_title(fr"$\alpha$ = {filt_val:.4g}")
         # handles, labels = ax.get_legend_handles_labels()
         # if handles:
         #     ax.legend(loc="lower right", frameon=True)

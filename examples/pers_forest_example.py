@@ -18,9 +18,6 @@ num_points=300
 points = rng.uniform(low=0.0, high=2*np.pi, size=num_points)
 points = np.sqrt(np.abs(np.cos(1.5*points))+.1)[:,None] * np.column_stack((np.cos(points), np.sin(points))) + rng.normal(scale=0.05, size=(num_points,2))
 
-print(points.shape)
-print(points[1])
-
 plt.figure(figsize=(6,6))
 plt.scatter( points[:,0], points[:,1], s = 3)
 plt.axis('equal')
