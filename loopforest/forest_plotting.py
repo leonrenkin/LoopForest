@@ -245,11 +245,11 @@ def _plot_dendrogram_generic(
         threshold: float = 0.0,
     ):
     """
-    Plot a dendrogram-style view of a LoopForest where y = filtration value.
+    Plot a dendrogram-style view of a Forest where y = filtration value.
 
     Parameters
     ----------
-    forest : LoopForest
+    forest : Forest
         Forest containing nodes with `filt_val`, `parent`, `children`, and `id`.
     ax : matplotlib.axes.Axes | None
         Axes to draw on. If None, a new figure/axes is created.
@@ -277,7 +277,7 @@ def _plot_dendrogram_generic(
     import warnings
 
     if not forest.nodes:
-        raise ValueError("LoopForest has no nodes to plot.")
+        raise ValueError("Forest has no nodes to plot.")
 
     all_nodes = forest.nodes
     all_ids = set(all_nodes.keys())
@@ -349,7 +349,7 @@ def _plot_dendrogram_generic(
             # Nothing to plot under this threshold — return an empty/annotated axes.
             if ax is None:
                 _, ax = plt.subplots(figsize=(8, 6))
-            ax.set_title(f"LoopForest dendrogram (y = filt_val) — no trees exceed threshold {threshold}")
+            ax.set_title(f"Forest dendrogram (y = filt_val) — no trees exceed threshold {threshold}")
             ax.set_axis_off()
             if show:
                 plt.show()
@@ -437,7 +437,7 @@ def _plot_dendrogram_generic(
 
     ax.set_xlabel("leaf order")
     ax.set_ylabel("filt_val (y)")
-    title = "LoopForest dendrogram (y = filt_val)"
+    title = "Forest dendrogram (y = filt_val)"
     if threshold > 0.0:
         title += f" — threshold > {threshold}"
     ax.set_title(title)
@@ -472,11 +472,11 @@ def _animate_filtration_generic(
         barcode_kwargs: Optional[dict] = None,
     ):
         """
-        Create an animation of a LoopForest across its filtration values.
+        Create an animation of a Forest across its filtration values.
 
         Parameters
         ----------
-        forest : LoopForest
+        forest : Forest
             Forest exposing ``filtration``, ``barcode``, and ``plot_at_filtration``.
         filename : str | None, optional
             If given, the animation is written to this path.
@@ -530,7 +530,7 @@ def _animate_filtration_generic(
         from matplotlib.animation import FuncAnimation, FFMpegWriter
 
         if not hasattr(forest, "filtration") or not forest.filtration:
-            raise ValueError("LoopForest has no filtration data to animate.")
+            raise ValueError("Forest has no filtration data to animate.")
 
         # Optional restriction to a time window
         if t_min is None:
@@ -675,7 +675,7 @@ def animate_filtration_pair(
     barcode_kwargs_forest2: Optional[dict] = None,
 ):
     """
-    Animate two LoopForests side-by-side: for each forest, show the evolving
+    Animate two Forests side-by-side: for each forest, show the evolving
     cycle representatives in the point cloud together with its barcode.
 
     The filtration panels and barcodes are styled via `plot_at_filtration` and
@@ -683,7 +683,7 @@ def animate_filtration_pair(
 
     Parameters
     ----------
-    forest1, forest2 : LoopForest
+    forest1, forest2 : Forest
         The two forests to animate.
     filename : str or None, optional
         If not None, the animation is also written to this file.
