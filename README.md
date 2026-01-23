@@ -1,30 +1,28 @@
 # Persistence Forests and Generalized Landscapes
 
-Reference implementation accompanying our submission on persistence forests and generalized persistence landscapes. The code is meant to be usable by anyone interested in experimenting with the algorithm and reproducing figures/benchmarks from the manuscript (still under review).
+Implementation accompanying the manuscript on persistent cycle progressions and generalized persistence landscapes available at https://doi.org/10.48550/arXiv.2512.09668. The code is meant to be usable by anyone interested in experimenting with the algorithm and reproducing figures/benchmarks from the manuscript.
 
 ## What this repo provides
 - `PersistenceForest` (primary entry point) builds the forest of optimal cycles for an alpha complex, together with barcodes and cycle representatives over the filtration.
-- Generalized persistence landscapes via `forest_landscapes.py` and `cycle_rep_vectorisations.py`, including utilities to compare functionals on cycles.
-- Plotting helpers (`forest_plotting.py`) for barcodes, dendrogram-like views, snapshots along the filtration, and optional animations; `color_scheme.py` keeps plots consistent.
+- Plotting and animation methods for cycle representatives and barcodes in codimension 1.
+- Generalized persistence landscapes including vectorisation functions cycles like length, enclosed area and excess curvature.
 - End-to-end example in `pers_forest_example.py` showing forest construction, plotting, landscape computation, and simple ML vectorisation.
 - Benchmark tooling in `benchmark.py` to reproduce runtime plots reported in the paper.
-- Paper figure notebook `paper-examples.ipy` was used to generate submission graphics.
+- Paper figure notebook `paper-examples.ipy` was used to generate manuscript graphics.
 
 Legacy note: `LoopForest.py` is an older version kept for reference and is no longer part of the workflow.
 
 ## Installation
 Tested with Python 3.13.3. Install dependencies with pip:
 ```bash
-python -m venv .venv && source .venv/bin/activate  # optional but recommended
-pip install numpy matplotlib seaborn pandas scikit-learn gudhi
-# optional: pillow/ffmpeg for animations, jupyter for notebooks
+pip install numpy matplotlib seaborn gudhi
 ```
 
 ## Quickstart
 ```python
 import numpy as np
-from PersistenceForest import PersistenceForest
-from cycle_rep_vectorisations import signed_chain_edge_length
+from loopforest import PersistenceForest
+from loopforest.cycle_rep_vectorisation import signed_chain_edge_length
 
 # 1) Create a point cloud
 rng = np.random.default_rng(0)
@@ -56,12 +54,6 @@ python pers_forest_example.py
 - `forest.compute_generalized_landscape_family(...)` builds families for one functional; `plot_landscape_comparison_between_functionals` contrasts multiple labels.
 - `MultiLandscapeVectorizer` turns multiple forests into fixed-length feature vectors (optionally with basic stats) for downstream ML models.
 
-## Benchmarks
-`benchmark.py` measures construction time across sampling schemes (`point_cloud_sampling.py`). Toggle the `if False/True` blocks in `__main__` to:
-- generate CSVs into `benchmarks/` for chosen samplers/size schedules, or
-- render the runtime plots from existing CSVs.
-Artifacts used in the manuscript are in `benchmarks/`.
-
 ## Repository guide
 - `PersistenceForest.py` – forest construction, barcodes, plotting wrappers, generalized landscapes.
 - `forest_plotting.py` – shared plotting/animation utilities.
@@ -75,5 +67,4 @@ Artifacts used in the manuscript are in `benchmarks/`.
 - `LoopForest.py` – deprecated predecessor, kept only for historical reference.
 
 ## Notes
-- The repository accompanies a submission that has not yet been accepted; interfaces may evolve slightly.
 - Animations require a working Matplotlib animation backend (Pillow or ffmpeg).
