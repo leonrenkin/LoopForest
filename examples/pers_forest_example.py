@@ -66,6 +66,8 @@ pers_forest.compute_generalized_landscape_family(
     max_k=6,
     num_grid_points=1000,
     label="length",
+    cache=True,
+    cache_functionals=True,
 )
 
 pers_forest.compute_generalized_landscape_family(
@@ -75,10 +77,21 @@ pers_forest.compute_generalized_landscape_family(
     label="1",
 )
 
+pers_forest.compute_generalized_landscape_family(
+    cycle_func=signed_chain_excess_curvature,
+    max_k=6,
+    num_grid_points=1000,
+    label="excess curvature",
+)
+
 # Plot the two different landscape families
 pers_forest.plot_landscape_family(label='length', title = "Length Persistence Landscapes")
 pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landscapes")
+pers_forest.plot_landscape_family(label="excess curvature", title = "Excess Curvature Persistence Landscapes")
 
+# %%
+print(pers_forest.landscape_families['length'])
+print(pers_forest.barcode_functionals['length'])
 
 # %%
 from loopforest.cycle_rep_vectorisations import signed_chain_excess_connected_components, signed_chain_area, signed_chain_connected_components, signed_chain_connected_components, signed_chain_excess_connected_components

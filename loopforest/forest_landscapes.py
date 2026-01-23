@@ -249,7 +249,6 @@ class PiecewiseLinearFunction:
             return float(y_arr)
         return y_arr
 
-
 @dataclass
 class BarcodeFunctionals:
     """
@@ -392,11 +391,10 @@ class GeneralizedLandscapeFamily:
 
         return out
 
-
 @dataclass
 class LandscapeVectorizer:
     """
-    Turn generalized landscapes of LoopForest objects into fixed-size
+    Turn generalized landscapes of Forest objects into fixed-size
     feature vectors suitable for machine learning.
 
     Usage:
@@ -1326,17 +1324,57 @@ def compute_generalized_landscape_family(
             if (bar.death - bar.birth) >= min_bar_length
         ]
 
-        if not bars:
-            raise ValueError(
-                f"No bars with length >= {min_bar_length}. "
-                "Increase min_bar_length or check your barcode."
-            )
-
-        # 2. Compute kernels for each bar
         if functionals_label is None:
             functionals_label = label
         if cache_functionals is None:
             cache_functionals = cache
+
+
+        if not bars:
+            # --- Empty barcode (after min_bar_length filtering): return 0-landscapes instead of error ---
+            # Common grid (still needed for a well-formed family / vectorization)
+            if x_grid is None:
+                # No bars => no natural domain; choose a stable default
+                x_grid = np.linspace(0.0, 1.0, num_grid_points)
+            else:
+                x_grid = np.asarray(x_grid, dtype=float)
+                if x_grid.ndim != 1 or x_grid.size < 2:
+                    raise ValueError("x_grid must be a 1D array with at least 2 points")
+
+            # Build zero landscapes on the chosen grid
+            xmin, xmax = float(x_grid[0]), float(x_grid[-1])
+
+            def _zero_plf(k: int) -> PiecewiseLinearFunction:
+                return PiecewiseLinearFunction(
+                    xs=x_grid,
+                    ys=np.zeros_like(x_grid),
+                    domain=(xmin, xmax),
+                    metadata={"k": k, "mode": mode, "empty_barcode": True},
+                )
+
+            landscapes = {k: _zero_plf(k) for k in range(1, max_k + 1)}
+
+            fam = GeneralizedLandscapeFamily(
+                forest_id=getattr(forest, "id", str(id(forest))),
+                label=label,
+                rescaling=mode,
+                x_grid=x_grid,
+                bar_kernels={},  # no bars => no kernels
+                landscapes=landscapes,
+                extra_meta={
+                    "min_bar_length": min_bar_length,
+                    "n_bars": 0,
+                    "empty_barcode": True,
+                    "functionals_label": functionals_label,
+                },
+            )
+
+            if cache:
+                if not hasattr(forest, "landscape_families"):
+                    forest.landscape_families = {}
+                forest.landscape_families[label] = fam
+
+            return fam
 
         if not compute_functionals:
             bf =forest.barcode_functionals.get(functionals_label, None)
