@@ -1459,6 +1459,7 @@ def plot_landscape_family(
         ks: Optional[List[int]] = None,
         ax: Optional["matplotlib.axes.Axes"] = None,
         title: Optional[str] = None,
+        show: bool = True,
     ):
     """
     Plot selected landscapes λ_k from a stored family on a given forest.
@@ -1504,6 +1505,9 @@ def plot_landscape_family(
     ax.set_title(title)
     ax.legend()
     ax.grid(True, alpha=0.3)
+
+    if show:
+        plt.show()
 
     return ax
 
