@@ -8,7 +8,7 @@ import gudhi as gd
 # Import PersistenceForest class
 # PersistenceForest contains methods for plotting barcodes, cycle representatives, and computing vectorisations based on cycle representatives
 # This is the central class of the LoopForest package
-from PersistenceForest import PersistenceForest
+from loopforest import PersistenceForest
 
 
 # %%
@@ -17,9 +17,6 @@ rng = np.random.default_rng(35)
 num_points=300
 points = rng.uniform(low=0.0, high=2*np.pi, size=num_points)
 points = np.sqrt(np.abs(np.cos(1.5*points))+.1)[:,None] * np.column_stack((np.cos(points), np.sin(points))) + rng.normal(scale=0.05, size=(num_points,2))
-
-print(points.shape)
-print(points[1])
 
 plt.figure(figsize=(6,6))
 plt.scatter( points[:,0], points[:,1], s = 3)
@@ -62,7 +59,7 @@ print(cycle_reps_vertex_coords)  #print first cycle representative as array of c
 # showcase of generalized landscape functionalities
 
 #import cycle functionals which map a (signed) cycle representative to a real number
-from cycle_rep_vectorisations import signed_chain_edge_length, constant_one_functional
+from loopforest.cycle_rep_vectorisations import signed_chain_edge_length, constant_one_functional
 
 pers_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_edge_length,
@@ -84,10 +81,10 @@ pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landsc
 
 
 # %%
-from cycle_rep_vectorisations import signed_chain_excess_connected_components, signed_chain_area, signed_chain_connected_components, signed_chain_connected_components, signed_chain_excess_connected_components
+from loopforest.cycle_rep_vectorisations import signed_chain_excess_connected_components, signed_chain_area, signed_chain_connected_components, signed_chain_connected_components, signed_chain_excess_connected_components
 
 # New point cloud example
-double_edge_cloud = np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
+double_edge_cloud = np.loadtxt("../point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
 double_edge_forest.plot_at_filtration(15,show_orientation_arrows=True, figsize=(5,5))
@@ -129,7 +126,7 @@ double_edge_forest.plot_landscape_comparison_between_functionals(labels=["signed
 # %%
 # Example of vectorisation of PersistenceForest objects using MultiLandscapeVectorizer
 
-from forest_landscapes import MultiLandscapeVectorizer
+from loopforest.forest_landscapes import MultiLandscapeVectorizer
 # 1. define functions
 cycle_funcs = [signed_chain_edge_length]
 

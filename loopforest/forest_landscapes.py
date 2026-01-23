@@ -1678,7 +1678,7 @@ def animate_barcode_measurement_generic(
     plot_kwargs : dict or None, optional
         Extra keyword arguments forwarded to
         ``forest.plot_at_filtration``. Useful keys include e.g.
-        ``fill_triangles``, ``point_size``, ``coloring``.
+        ``fill_triangles``, ``vertex_size``, ``coloring``.
     measurement_kwargs : dict or None, optional
         Extra keyword arguments forwarded to
         ``StepFunctionData.plot``, **except** for ``ax`` which is
@@ -1725,7 +1725,7 @@ def animate_barcode_measurement_generic(
     # Reasonable defaults (only used if not explicitly overridden)
     plot_kwargs = {
         "fill_triangles": True,
-        "point_size": 3,
+        "vertex_size": 3,
         "coloring": "forest",
         "title": "Alpha Filtration",
         "show": False,   # important: we manage the figure ourselves

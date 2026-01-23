@@ -1363,7 +1363,7 @@ class LoopForest:
         Seed for randomness
         """
 
-        from color_scheme import color_map_for_bars
+        from .color_scheme import color_map_for_bars
 
         ordered_bars = sorted(list(self.barcode), key= lambda bar: bar.lifespan(), reverse=True)
 
@@ -1398,7 +1398,7 @@ class LoopForest:
         fill_triangles: bool = True,
         loop_vertex_markers: bool = False,
         figsize: tuple[float, float] = (7, 7), 
-        point_size: float = 3,
+        vertex_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
     ):
@@ -1464,7 +1464,7 @@ class LoopForest:
                 tris_xy.append([pts[i], pts[j], pts[k]])
 
         # --- Base scatter
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points", ec="none")
+        ax.scatter(pts[:, 0], pts[:, 1], s=vertex_size, color="k", zorder=3, label="points", ec="none")
 
         # --- Draw triangles first (under edges)
         if fill_triangles and tris_xy:
@@ -1533,7 +1533,7 @@ class LoopForest:
         fill_triangles: bool = True,
         loop_vertex_markers: bool = False,
         figsize: tuple[float, float] = (7, 7),
-        point_size: float = 1,
+        vertex_size: float = 1,
         coloring: Literal['forest','bars'] = "forest",
         dual_vertex_size: float = 1,
     ):
@@ -1619,7 +1619,7 @@ class LoopForest:
             else:
                 dual_edges_future.append(segment)
 
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points", marker="o", ec="none")
+        ax.scatter(pts[:, 0], pts[:, 1], s=vertex_size, color="k", zorder=3, label="points", marker="o", ec="none")
 
         if fill_triangles and tris_present:
             tri_coll = PolyCollection(
@@ -2223,7 +2223,7 @@ class LoopForest:
                 plot_kwargs=dict(
                     fill_triangles=True,
                     loop_vertex_markers=False,
-                    point_size=3,
+                    vertex_size=3,
                     coloring="forest",
                 )
         barcode_kwargs : dict | None, optional
@@ -2268,7 +2268,7 @@ class LoopForest:
         plot_kwargs = {
             "fill_triangles": True,
             "loop_vertex_markers": False,
-            "point_size": 3,
+            "vertex_size": 3,
             "coloring": coloring,
             "show": False,   # important: we manage the figure ourselves
             **plot_kwargs,
@@ -3262,7 +3262,7 @@ def animate_filtration_pair(
     base_plot_kwargs = {
         "fill_triangles": True,
         "loop_vertex_markers": False,
-        "point_size": 3,
+        "vertex_size": 3,
         "coloring": "forest",  # uses the forest's color dict, shared with barcode
         "show": False,         # we manage figure/axes ourselves
     }

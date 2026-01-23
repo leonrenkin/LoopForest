@@ -36,9 +36,11 @@ def generate_point_cloud_2d(min=0,max=1,save_to_csv=False, filename="point_cloud
     return point_cloud
 
 
-filename="tmp.csv"
+if __name__ == "__main__":
 
-#manually generate point cloud
-axis_min=0
-axis_max=1
-point_cloud_1=generate_point_cloud_2d(axis_min,axis_max,save_to_csv=True, filename=filename,timeout=90)
+    filename="tmp.csv"
+
+    #manually generate point cloud
+    axis_min=0
+    axis_max=1
+    point_cloud_1=generate_point_cloud_2d(axis_min,axis_max,save_to_csv=True, filename=filename,timeout=90)

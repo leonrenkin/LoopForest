@@ -1,8 +1,8 @@
 #%%
 import numpy as np
 import matplotlib.pyplot as plt
-from LoopForest import LoopForest
-from PersistenceForest import PersistenceForest
+from loopforest.LoopForest import LoopForest
+from loopforest.PersistenceForest import PersistenceForest
 import seaborn as sns
 from matplotlib.patches import Rectangle, Circle
 
@@ -27,7 +27,7 @@ plt.rcParams.update({
 
 
 #%%
-double_edge_cloud =np.loadtxt("point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1)
+double_edge_cloud =np.loadtxt("../point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1)
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
 double_edge_cloud_disconnected = np.concatenate((double_edge_cloud[:1], double_edge_cloud[2:]))
@@ -61,8 +61,8 @@ plt.show()
 # %%
 
 fig, axes = plt.subplots(ncols=2, nrows=1, figsize = (3,1.5))
-double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, show_orientation_arrows=True, title="Signed Cycle",show=False)
-double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, show_orientation_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False)
+double_edge_forest.plot_at_filtration(ax = axes[1], filt_val=0.15, show_orientation_arrows=True, title="Signed Cycle",show=False,linewidth_cycle=0.8)
+double_edge_forest.plot_at_filtration(ax = axes[0], filt_val=0.15, show_orientation_arrows=True, remove_double_edges=True, title = "Unsigned Cycle", show=False,linewidth_cycle=0.8)
 axes[0].axis('off')
 axes[1].axis('off')
 axes[0].set_title(None)
@@ -73,10 +73,10 @@ plt.show()
 
 
 # %% Example: Connected vs Disconnected Islands
-from cycle_rep_vectorisations import signed_chain_excess_connected_components
-from forest_landscapes import plot_landscape_comparison
+from loopforest.cycle_rep_vectorisations import signed_chain_excess_connected_components
+from loopforest.forest_landscapes import plot_landscape_comparison
 
-connected_islands_cloud = np.loadtxt("point_cloud_csvs/circle_with_connected_inner_islands.csv",  delimiter=",", skiprows=1) *100
+connected_islands_cloud = np.loadtxt("../point_cloud_csvs/circle_with_connected_inner_islands.csv",  delimiter=",", skiprows=1) *100
 disconnected_islands_cloud = connected_islands_cloud[:-7]  #remove points to disconnect inner islands
 
 connected_islands_forest = PersistenceForest( connected_islands_cloud )
@@ -158,7 +158,7 @@ rng = np.random.default_rng(35)
 num_points=300
 points = rng.uniform(low=0.0, high=2*np.pi, size=num_points)
 points = np.sqrt(np.abs(np.cos(1.5*points))+.1)[:,None] * np.column_stack((np.cos(points), np.sin(points))) + rng.normal(scale=0.05, size=(num_points,2))
-pers_forest = PersistenceForest(points, print_info=True)
+pers_forest = PersistenceForest(points)
 
 #change start color for loop forest - you can pick a color of your choosing here
 #this color map will be used in all consecutive plots for this forest
@@ -171,18 +171,19 @@ for k in range(0,N):
     axs[k].axis('off')
     axs[k].set_xticks([])
     axs[k].set_yticks([])
-    pers_forest.plot_at_filtration_with_dual(.5+.25*k, ax=axs[k], dual_vertex_size=1.5, point_size=1.5)
+    pers_forest.plot_at_filtration_with_dual(.5+.25*k, ax=axs[k], dual_vertex_size=1.5, vertex_size=1.5, show=False, linewidth_cycle=0.9)
     axs[k].set_title(None)
     if k > 0:
-        fig.text((k)/N, 0.5, "$\subseteq$")
+        fig.text((k)/N, 0.5, fr"$\subseteq$")
 fig.tight_layout(pad=0.0)
 fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
-fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300)
+#fig.savefig('paper_figures/loop_forest_dual_filt.pdf', transparent=True, dpi=300)
+plt.show()
 
 # %% Example: Point clouds with barcodes
 
 from point_cloud_sampling import sample_noisy_circle, sample_noisy_star,  sample_noisy_ellipse,  sample_noisy_circle_with_tendril, sample_noisy_star_pointy
-from cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
+from loopforest.cycle_rep_vectorisations import polygon_area, polygon_length, polygon_length_squared_area_ratio_normalized, curvature_excess
 
 n_points = 1000
 
@@ -223,7 +224,7 @@ fig.savefig('paper_figures/point_clouds_with_barcodes.pdf', transparent=True, dp
 plt.show()
 
 # %% Example: Measurement comparisons
-from cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
+from loopforest.cycle_rep_vectorisations import signed_chain_area, signed_chain_edge_length, signed_chain_excess_curvature
 fig, axes = plt.subplots(nrows=2,ncols=3, figsize=(4, 1.5), sharex='col', layout='constrained')
 
 cycle_funcs_list = [
@@ -245,7 +246,7 @@ for i, (func_name, cycle_func) in enumerate(cycle_funcs_list):
     axes[0, i].set_ylim(bottom=0) 
     axes[0, i].grid(False)
 
-from forest_landscapes import plot_landscape_comparison
+from loopforest.forest_landscapes import plot_landscape_comparison
 
 forests = [forest for _, forest in name_forest_list]
 forest_labels = [name for name, _ in name_forest_list]
@@ -336,7 +337,7 @@ for (ax, t) in zip(axs3, axs2[0].get_xticks()):
     ax.set_box_aspect(1)
     ax.set_xticks([])
     ax.set_yticks([])
-    forest.plot_at_filtration(filt_val=t, ax=ax, title="", show=False, point_size=1)
+    forest.plot_at_filtration(filt_val=t, ax=ax, title="", show=False, vertex_size=1)
 fig3.tight_layout(pad=.5)
 fig3.subplots_adjust(left=0, right=1, top=1, bottom=0)
 fig3.savefig("paper_figures/four_leaf_clover_landscapes3.pdf", dpi=300, transparent=True)
