@@ -437,6 +437,6 @@ def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64])
         if polygon_area(point_cloud[path]) < 1e-8:
             continue  # Avoid division by zero for degenerate paths
         else:
-            total_circularity += 4.0*math.pi*polygon_length(point_cloud[path])**2/polygon_area(point_cloud[path]) - 1
+            total_circularity += polygon_length(point_cloud[path])**2/(4.0*math.pi*polygon_area(point_cloud[path])) - 1
 
     return total_circularity
