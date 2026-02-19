@@ -59,8 +59,11 @@ print(cycle_reps_vertex_coords)  #print first cycle representative as array of c
 # showcase of generalized landscape functionalities
 
 #import cycle functionals which map a (signed) cycle representative to a real number
-from loopforest.cycle_rep_vectorisations import signed_chain_edge_length, constant_one_functional
+from loopforest.cycle_rep_vectorisations import signed_chain_edge_length, constant_one_functional,signed_chain_excess_curvature
 
+#compute generalized landscapes
+#by default (cache=True), landscapes are saved in PersForest object with given label
+#landscape can be plotted and vectorized from PersForest object with given label
 pers_forest.compute_generalized_landscape_family(
     cycle_func=signed_chain_edge_length,
     max_k=6,
@@ -84,7 +87,7 @@ pers_forest.compute_generalized_landscape_family(
     label="excess curvature",
 )
 
-# Plot the two different landscape families
+# Plot the different landscape families
 pers_forest.plot_landscape_family(label='length', title = "Length Persistence Landscapes")
 pers_forest.plot_landscape_family(label="1", title = "Regular Persistence Landscapes")
 pers_forest.plot_landscape_family(label="excess curvature", title = "Excess Curvature Persistence Landscapes")
