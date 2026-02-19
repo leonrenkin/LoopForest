@@ -14,9 +14,11 @@ Implementation accompanying the manuscript on persistent cycle progressions and 
 Legacy note: `LoopForest.py` is an older version kept for reference and is no longer part of the workflow.
 
 ## Installation
-Tested with Python 3.13.3. Install dependencies with pip:
+Tested with Python 3.13.3.
 ```bash
-pip install numpy matplotlib seaborn gudhi
+git clone https://github.com/leonrenkin/LoopForest.git
+cd LoopForest
+pip install .
 ```
 
 ## Quickstart
