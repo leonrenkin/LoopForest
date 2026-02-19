@@ -395,6 +395,7 @@ def signed_chain_excess_curvature_normalized(signed_chain, point_cloud: NDArray[
     """
     Sum of ``curvature_excess`` with normalized=True over every polyhedral path in the chain.
 
+
     Parameters
     ----------
     signed_chain
@@ -407,12 +408,35 @@ def signed_chain_excess_curvature_normalized(signed_chain, point_cloud: NDArray[
     float
         Total normalized excess curvature across all paths.
     """
+    return signed_chain_excess_curvature(signed_chain, point_cloud) / (2.0*math.pi)
+
+
+def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Circularity functional: 4pi * perimeter^2 / area - 1 for the chain's paths.
+    This is zero for a perfect circle and positive for less circular shapes.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)``.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    float
+        Circularity measure; higher values indicate more circular shapes.
+    """
     paths = list( signed_chain.polyhedral_paths(point_cloud) )
-    total = 0
+    total_circularity = 0
     for path in paths:
         if len(path) < 2:
             print(paths)
             raise ValueError("Paths too short")
-        total += curvature_excess(point_cloud[path], normalize=True)
+        if polygon_area(point_cloud[path]) < 1e-8:
+            continue  # Avoid division by zero for degenerate paths
+        else:
+            total_circularity += polygon_length(point_cloud[path])**2/(4.0*math.pi*polygon_area(point_cloud[path])) - 1
 
-    return total
+    return total_circularity
