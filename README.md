@@ -24,6 +24,7 @@ pip install .
 ## Quickstart
 ```python
 import numpy as np
+import matplotlib.pyplot as plt
 from loopforest import PersistenceForest
 from loopforest.cycle_rep_vectorisation import signed_chain_edge_length
 
@@ -46,6 +47,7 @@ forest.compute_generalized_landscape_family(
     label="edge-length",
 )
 forest.plot_landscape_family(label="edge-length")
+plt.show()
 ```
 Run the richer demo (plots + simple ML vectorisation) with:
 ```bash
