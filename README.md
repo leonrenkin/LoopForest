@@ -7,20 +7,24 @@ Implementation accompanying the manuscript on persistent cycle progressions and 
 - Plotting and animation methods for cycle representatives and barcodes in codimension 1.
 - Generalized persistence landscapes including vectorisation functions cycles like length, enclosed area and excess curvature.
 - End-to-end example in `pers_forest_example.py` showing forest construction, plotting, landscape computation, and simple ML vectorisation.
+- Example for generating animations in `animation_tutorial.ipynb`.
 - Benchmark tooling in `benchmark.py` to reproduce runtime plots reported in the paper.
 - Paper figure notebook `paper-examples.ipy` was used to generate manuscript graphics.
 
 Legacy note: `LoopForest.py` is an older version kept for reference and is no longer part of the workflow.
 
 ## Installation
-Tested with Python 3.13.3. Install dependencies with pip:
+Tested with Python 3.13.3.
 ```bash
-pip install numpy matplotlib seaborn gudhi
+git clone https://github.com/leonrenkin/LoopForest.git
+cd LoopForest
+pip install .
 ```
 
 ## Quickstart
 ```python
 import numpy as np
+import matplotlib.pyplot as plt
 from loopforest import PersistenceForest
 from loopforest.cycle_rep_vectorisation import signed_chain_edge_length
 
@@ -43,6 +47,7 @@ forest.compute_generalized_landscape_family(
     label="edge-length",
 )
 forest.plot_landscape_family(label="edge-length")
+plt.show()
 ```
 Run the richer demo (plots + simple ML vectorisation) with:
 ```bash
@@ -61,6 +66,7 @@ python pers_forest_example.py
 - `cycle_rep_vectorisations.py` – cycle functionals and vectoriser.
 - `color_scheme.py` – consistent color palettes across plots.
 - `pers_forest_example.py` – main usage example.
+- `animation_tutorial.ipynb` – animation example. 
 - `benchmark.py` – runtime benchmarks.
 - `paper-examples.ipy`, `generalized_landscape_plots/`, `paper_figures/` – scripts/notebooks for paper figures.
 - `point_cloud_sampling.py`, `point_cloud_generator.py` – synthetic data utilities.
