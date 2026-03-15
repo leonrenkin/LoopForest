@@ -1235,6 +1235,7 @@ class PersistenceForest:
         show_cycles: bool = True,
         linewidth_filt: float = 0.6,
         linewidth_cycle: float = 1.8,
+        alpha_digits=None,
     ):
         """
         Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
@@ -1668,12 +1669,11 @@ class PersistenceForest:
         ax=None,
         show: bool = True,
         figsize: tuple[float, float] = (7, 7), 
-        point_size: float = 3,
+        vertex_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
         show_orientation_arrows: bool = False,
         remove_double_edges: bool = False,
-        linewidth_filt: float = 0.6,
         linewidth_cycle: float = 0.8,
     ):
         """
@@ -1745,7 +1745,7 @@ class PersistenceForest:
 
 
         # --- Base scatter
-        ax.scatter(pts[:, 0], pts[:, 1], s=point_size, color="k", zorder=3, label="points")
+        ax.scatter(pts[:, 0], pts[:, 1], s=vertex_size, color="k", zorder=3, label="points")
 
         # --- Overlay loops from barcode representatives
         for bar in self.barcode:

@@ -50,6 +50,7 @@ def _plot_barcode_generic(
         min_bar_length: float = 0.0,
         bar_width: float = 2.0,
         descending: bool = False,
+        tight_layout: bool = True,
     ):
     """
     Plot a 1D barcode from forest.barcode (a set[Bar]).
@@ -224,7 +225,8 @@ def _plot_barcode_generic(
     ax.set_title(title)
     ax.grid(True, axis="x", linestyle=":", alpha=0.5)
     ax.set_ylim(-1, n_bars)  # keep bars nicely framed
-    fig.tight_layout()
+    if tight_layout:
+        fig.tight_layout()
 
     # If we created the axes, show it immediately (so this works in scripts)
     if created_ax:
@@ -470,6 +472,7 @@ def _animate_filtration_generic(
         total_figsize: Optional[tuple[float, float]] = None,
         plot_kwargs: Optional[dict] = None,
         barcode_kwargs: Optional[dict] = None,
+        alpha_digits: Optional[int] = None,
     ):
         """
         Create an animation of a Forest across its filtration values.
@@ -549,7 +552,7 @@ def _animate_filtration_generic(
             "fill_triangles": True,
             "vertex_size": 3,
             "coloring": coloring,
-            "show": False,   # important: we manage the figure ourselves
+            "show": False,  
             **plot_kwargs,
         }
 
@@ -561,7 +564,7 @@ def _animate_filtration_generic(
             fig, (ax_cloud, ax_bar) = plt.subplots(
                 1, 2,
                 figsize=total_figsize,
-                gridspec_kw={"width_ratios": [3, 2]},
+                layout="constrained", 
             )
 
             # Draw the (static) barcode once
@@ -580,8 +583,10 @@ def _animate_filtration_generic(
                 "sort": "length",
                 "title": "Barcode",
                 "xlabel": "filtration value",
+                "tight_layout": False,
                 **barcode_kwargs,
             }
+
 
             forest.plot_barcode(
                 ax=ax_bar,
@@ -605,8 +610,12 @@ def _animate_filtration_generic(
 
             # Optional: overlay a small text box with the current filtration value.
             # Comment this out if you prefer only the built-in title.
+            if alpha_digits is None:
+                radius_text = rf"$\alpha = {t:.3g}$"
+            else:
+                radius_text = rf"$\alpha = {t:.{alpha_digits}f}$"
             ax_cloud.text(
-                0.02, 0.98, rf"$\alpha = {t:.3g}$",
+                0.02, 0.98, radius_text,
                 transform=ax_cloud.transAxes,
                 va="top", ha="left",
                 fontsize=11,
@@ -638,24 +647,27 @@ def _animate_filtration_generic(
 
         # ---- Optionally write to disk ----
         if filename is not None:
+            # Force a draw so text/ticks/layout are finalized
+            fig.canvas.draw()
+
+
             fname = str(filename)
             ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+
+            savefig_kwargs = {
+                "pad_inches": 0.02,  
+                "facecolor": fig.get_facecolor(),
+            }
+
             if ext == "mp4":
                 writer = FFMpegWriter(fps=fps, bitrate=2000)
-                anim.save(fname, writer=writer, dpi=dpi)
+                anim.save(fname, writer=writer, dpi=dpi, savefig_kwargs=savefig_kwargs)
             elif ext in {"gif", "gifv"}:
-                try:
-                    from matplotlib.animation import PillowWriter
-                except ImportError as e:  # optional dependency
-                    raise RuntimeError(
-                        "Saving as GIF requires Pillow. Install it with `pip install pillow`."
-                    ) from e
+                from matplotlib.animation import PillowWriter
                 writer = PillowWriter(fps=fps)
-                anim.save(fname, writer=writer, dpi=dpi)
+                anim.save(fname, writer=writer, dpi=dpi, savefig_kwargs=savefig_kwargs)
             else:
-                # Fallback to default writer chosen by matplotlib
-                anim.save(fname, dpi=dpi, fps=fps)
-
+                anim.save(fname, dpi=dpi, fps=fps, savefig_kwargs=savefig_kwargs)
         return anim, fig
 
 def animate_filtration_pair(
@@ -755,6 +767,7 @@ def animate_filtration_pair(
     base_barcode_kwargs = {
         "sort": "length",
         "xlabel": "filtration value",
+        "tight_layout": False,
     }
 
     if barcode_kwargs_forest1 is None:
@@ -873,7 +886,17 @@ def animate_filtration_pair(
         fname = str(filename)
         ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
         if ext == "mp4":
-            writer = FFMpegWriter(fps=fps, bitrate=2000)
+            writer = FFMpegWriter(
+                fps=fps, 
+                #bitrate=2000,
+                codec="libx264",
+                extra_args=[
+                    "-pix_fmt", "yuv420p",
+                    "-vf", "scale=1920:-2",     
+                    "-profile:v", "baseline",
+                    "-level", "3.1",
+                    "-movflags", "+faststart",
+                ],)
             anim.save(fname, writer=writer, dpi=dpi)
         elif ext in {"gif", "gifv"}:
             try:
