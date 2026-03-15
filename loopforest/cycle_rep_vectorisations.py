@@ -411,10 +411,10 @@ def signed_chain_excess_curvature_normalized(signed_chain, point_cloud: NDArray[
     return signed_chain_excess_curvature(signed_chain, point_cloud) / (2.0*math.pi)
 
 
-def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+def signed_chain_circularity(signed_chain, point_cloud: NDArray[np.float64]) -> float:
     """
-    Circularity functional: 4pi * perimeter^2 / area - 1 for the chain's paths.
-    This is zero for a perfect circle and positive for less circular shapes.
+    Circularity functional: 4pi * area / perimeter^2  for the chain's paths.
+    This is 1 for a perfect circle and between 0 and 1 for less circular shapes.
 
     Parameters
     ----------
@@ -428,15 +428,52 @@ def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64])
     float
         Circularity measure; higher values indicate more circular shapes.
     """
-    paths = list( signed_chain.polyhedral_paths(point_cloud) )
-    total_circularity = 0
-    for path in paths:
-        if len(path) < 2:
-            print(paths)
-            raise ValueError("Paths too short")
-        if polygon_area(point_cloud[path]) < 1e-8:
-            continue  # Avoid division by zero for degenerate paths
-        else:
-            total_circularity += polygon_length(point_cloud[path])**2/(4.0*math.pi*polygon_area(point_cloud[path])) - 1
+    length = signed_chain_edge_length(signed_chain=signed_chain, point_cloud=point_cloud)
+    area = signed_chain_area(signed_chain=signed_chain,point_cloud=point_cloud)
+    circularity = (4.0*math.pi*area)/length**2
 
-    return total_circularity
+    return circularity
+
+def signed_chain_circularity_complement(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Return 1-circularity
+    Circularity functional: 4pi * area / perimeter^2  for the chain's paths.
+    This is 0 for a perfect circle and between 0 and 1 for less circular shapes.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)``.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    float
+        Non-Circularity measure; higher values indicate more circular shapes.
+    """
+    return 1- signed_chain_circularity(signed_chain=signed_chain, point_cloud=point_cloud)
+
+
+def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Circularity functional: perimeter^2 / (4pi*area) - 1 for the chain's paths.
+    This is zero for a perfect circle and positive for less circular shapes.
+
+    Parameters
+    ----------
+    signed_chain
+        Object exposing ``polyhedral_paths(point_cloud)``.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    float
+        Non-Circularity measure; higher values indicate less circular shapes.
+    """
+    length = signed_chain_edge_length(signed_chain=signed_chain, point_cloud=point_cloud)
+    area = signed_chain_area(signed_chain=signed_chain,point_cloud=point_cloud)
+    non_circularity = length**2/(4.0*math.pi*area) - 1
+
+    return non_circularity
