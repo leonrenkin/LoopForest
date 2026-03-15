@@ -19,3 +19,5 @@ latex/
 point_cloud_generator.py
 examples/point_cloud_generator.py
 examples/example_figures
+examples/landscape_perturbation_study.py
+examples/Numerical_stability.ipynb
