@@ -256,8 +256,10 @@ def signed_chain_edge_length(signed_chain, point_cloud: NDArray[np.float64]) -> 
     -----
     Signs/orientations are ignored; the chain is treated as unsigned for length.
     """
+    if signed_chain.dim() != 1:
+        raise ValueError("Function only defined for 1-dimensional chains")
+    
     total = 0.0
-
     for simplex, sign in signed_chain.signed_simplices:
         # Make sure we have exactly two vertices: an edge
         verts_idx = list(simplex)
@@ -307,6 +309,8 @@ def signed_chain_connected_components(signed_chain, point_cloud: NDArray[np.floa
     int
         Count of connected components.
     """
+    if signed_chain.dim() != 1:
+        raise ValueError("Function only defined for 1-dimensional chains")
     return len( signed_chain.polyhedral_paths(point_cloud) )
 
 def signed_chain_excess_connected_components(signed_chain, point_cloud: NDArray[np.float64]) -> float:
@@ -325,6 +329,8 @@ def signed_chain_excess_connected_components(signed_chain, point_cloud: NDArray[
     int
         Components count minus one.
     """
+    if signed_chain.dim() != 1:
+        raise ValueError("Function only defined for 1-dimensional chains")
     return len( signed_chain.polyhedral_paths(point_cloud) ) - 1
 
 def signed_chain_area(signed_chain, point_cloud:  NDArray[np.float64]) -> float:
@@ -348,6 +354,8 @@ def signed_chain_area(signed_chain, point_cloud:  NDArray[np.float64]) -> float:
     float
         Signed area of the chain (outer minus inner regions).
     """
+    if signed_chain.dim() != 1:
+        raise ValueError("Function only defined for 1-dimensional chains")
 
     paths = list( signed_chain.polyhedral_paths(point_cloud) )
     x_max_list = np.array([point_cloud[path, 0].max() for path in paths])
@@ -381,6 +389,9 @@ def signed_chain_excess_curvature(signed_chain, point_cloud: NDArray[np.float64]
     float
         Total excess curvature across all paths.
     """
+    if signed_chain.dim() != 1:
+        raise ValueError("Function only defined for 1-dimensional chains")
+
     paths = list( signed_chain.polyhedral_paths(point_cloud) )
     total = 0
     for path in paths:
@@ -428,6 +439,9 @@ def signed_chain_circularity(signed_chain, point_cloud: NDArray[np.float64]) -> 
     float
         Circularity measure; higher values indicate more circular shapes.
     """
+    if signed_chain.dim() != 1:
+        raise ValueError("Function only defined for 1-dimensional chains")
+    
     length = signed_chain_edge_length(signed_chain=signed_chain, point_cloud=point_cloud)
     area = signed_chain_area(signed_chain=signed_chain,point_cloud=point_cloud)
     circularity = (4.0*math.pi*area)/length**2
@@ -472,6 +486,8 @@ def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64])
     float
         Non-Circularity measure; higher values indicate less circular shapes.
     """
+    if signed_chain.dim() != 1:
+        raise ValueError("Function only defined for 1-dimensional chains")
     length = signed_chain_edge_length(signed_chain=signed_chain, point_cloud=point_cloud)
     area = signed_chain_area(signed_chain=signed_chain,point_cloud=point_cloud)
     non_circularity = length**2/(4.0*math.pi*area) - 1
