@@ -322,7 +322,7 @@ def build_color_scheme(set_sizes: Sequence[int],
 
 
 # -----------------------
-# <== Your objects entry point
+# forest objects entry point
 # -----------------------
 
 def _sid(ob) -> int:
@@ -444,46 +444,3 @@ def color_map_for_bars(
             color_map[id(ob) if by_id else ob] = colors[i % len(colors)]
     return color_map
 
-# -----------------------
-# Example usage
-# -----------------------
-if __name__ == "__main__":
-    # Dummy class for demonstration
-    class Bar:
-        def __init__(self, name, color_set, rank):
-            self.name = name
-            self.color_set = color_set
-            self.rank = rank
-        def __repr__(self):
-            return f"Bar({self.name})"
-
-    # Example bars_set
-    bars_set = set([
-        Bar("a1", "A", 2), Bar("a2", "A", 1), Bar("b1", "B", 3),
-        Bar("c1", "C", 1), Bar("b2", "B", 2)
-    ])
-
-    # 1) Build & save a reusable scheme from the current bars_set
-    scheme = build_scheme_from_bars(
-        bars_set,
-        seed=123,
-    )
-
-    color_map = color_map_for_bars(
-        bars_set,
-        by_id=False,  # set True if your objects are unhashable
-    )
-
-    # color_map is {Bar(...) -> "#RRGGBB"} usable in plotting
-    # Example with Matplotlib:
-    """
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    x = np.arange(10)
-    for ob in bars_set:
-        y = np.sin(x * (ob.rank + 1) / 4)
-        plt.plot(x, y, label=ob.name, color=color_map[ob])
-    plt.legend()
-    plt.show()
-    """
