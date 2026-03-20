@@ -36,6 +36,10 @@ pers_forest.plot_at_filtration(0.2)
 pers_forest.plot_at_filtration(0.6)
 pers_forest.plot_at_filtration(0.7)
 
+# %%
+#example of interactive 2d plot
+
+ui = pers_forest.interactive_plot_filtration(show_cycles=True, height=800)
 
 # %%
 #This cell showcases cycle representative extraction and plotting
@@ -137,6 +141,8 @@ double_edge_forest.compute_generalized_landscape_family(
 
 double_edge_forest.plot_landscape_comparison_between_functionals(labels=["signed components", "unsigned components"] )
 double_edge_forest.plot_landscape_comparison_between_functionals(labels=["signed excess components", "unsigned excess components"] )
+
+
 
 
 # %%

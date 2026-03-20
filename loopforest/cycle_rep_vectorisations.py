@@ -380,7 +380,9 @@ def signed_chain_excess_curvature(signed_chain, point_cloud: NDArray[np.float64]
     Parameters
     ----------
     signed_chain
-        Object exposing ``polyhedral_paths(point_cloud)``.
+        Object containing signed simplices of the form (simplex, sign), 
+        where simplex is of the form tuple[int] corresponing to indices in point cloud
+        and sign is +-1.
     point_cloud : (n_points, dim) np.ndarray
         Coordinates for the ambient point cloud.
 
@@ -410,7 +412,9 @@ def signed_chain_excess_curvature_normalized(signed_chain, point_cloud: NDArray[
     Parameters
     ----------
     signed_chain
-        Object exposing ``polyhedral_paths(point_cloud)``.
+        Object containing signed simplices of the form (simplex, sign), 
+        where simplex is of the form tuple[int] corresponing to indices in point cloud
+        and sign is +-1.
     point_cloud : (n_points, dim) np.ndarray
         Coordinates for the ambient point cloud.
 
@@ -430,7 +434,9 @@ def signed_chain_circularity(signed_chain, point_cloud: NDArray[np.float64]) -> 
     Parameters
     ----------
     signed_chain
-        Object exposing ``polyhedral_paths(point_cloud)``.
+        Object containing signed simplices of the form (simplex, sign), 
+        where simplex is of the form tuple[int] corresponing to indices in point cloud
+        and sign is +-1
     point_cloud : (n_points, dim) np.ndarray
         Coordinates for the ambient point cloud.
 
@@ -457,7 +463,9 @@ def signed_chain_circularity_complement(signed_chain, point_cloud: NDArray[np.fl
     Parameters
     ----------
     signed_chain
-        Object exposing ``polyhedral_paths(point_cloud)``.
+        Object containing signed simplices of the form (simplex, sign), 
+        where simplex is of the form tuple[int] corresponing to indices in point cloud
+        and sign is +-1.
     point_cloud : (n_points, dim) np.ndarray
         Coordinates for the ambient point cloud.
 
@@ -477,7 +485,9 @@ def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64])
     Parameters
     ----------
     signed_chain
-        Object exposing ``polyhedral_paths(point_cloud)``.
+        Object containing signed simplices of the form (simplex, sign), 
+        where simplex is of the form tuple[int] corresponing to indices in point cloud
+        and sign is +-1.
     point_cloud : (n_points, dim) np.ndarray
         Coordinates for the ambient point cloud.
 
@@ -493,3 +503,34 @@ def signed_chain_non_circularity(signed_chain, point_cloud: NDArray[np.float64])
     non_circularity = length**2/(4.0*math.pi*area) - 1
 
     return non_circularity
+
+def signed_chain_volume(signed_chain, point_cloud: NDArray[np.float64]) -> float:
+    """
+    Returns volume of a signed chain. 
+    For a 2d point cloud, it corresponds to length (and not contained area), 
+    For a 3d point cloud, it corresponds to area (and not contained volume).
+
+    Parameters
+    ----------
+    signed_chain
+        Object containing signed simplices of the form (simplex, sign), 
+        where simplex is of the form tuple[int] corresponing to indices in point cloud
+        and sign is +-1.
+    point_cloud : (n_points, dim) np.ndarray
+        Coordinates for the ambient point cloud.
+
+    Returns
+    -------
+    float
+    """
+
+    simplices = np.asarray([simplex for simplex, sign in signed_chain.signed_simplices])
+
+    # Gather all matrices at once: shape (m, d, d)
+    mats = point_cloud[simplices]
+
+    # Batched determinant: shape (m,)
+    dets = np.linalg.det(mats)
+
+    return float(np.abs(dets).sum())
+

@@ -12,7 +12,6 @@ import matplotlib.axes
 from matplotlib.collections import LineCollection, PolyCollection
 import time
 import seaborn as sns
-import bisect
 from bisect import bisect_right
 
 # ------- helper function -----------
@@ -181,9 +180,9 @@ class SignedChain:
         """
         return SignedChain(signed_simplices= self.signed_simplices.difference({(tuple(simplex),1),(tuple(simplex),-1)}) )
     
-    def without_double_edges(self) -> "SignedChain":
+    def unsigned(self) -> "SignedChain":
         """
-        Return a new SignedChain where edges that appear with opposite
+        Return a new SignedChain where simplices that appear with opposite
         orientations cancel out.
 
         If an underlying simplex appears only with one orientation, it is kept.
@@ -395,7 +394,7 @@ class SignedChain:
         if signed: 
             signed_simplices = self.signed_simplices
         else:
-            signed_simplices = self.without_double_edges().signed_simplices
+            signed_simplices = self.unsigned().signed_simplices
 
         for signed_simplex in signed_simplices:
             simplex, _ = signed_simplex
@@ -1146,6 +1145,34 @@ class PersistenceForest:
         cycles = [bar.cycle_at_filtration_value(filt_val=filt_val) for bar in active_bars if bar.lifespan()>=min_bar_length]
         return cycles
 
+    def _active_bars_with_cycles_at(
+        self,
+        filt_val: float,
+        min_bar_length: float = 0.0,
+    ) -> List[Tuple["PFBar", SignedChain]]:
+        """
+        Return active bars together with their active cycle representatives.
+
+        Parameters
+        ----------
+        filt_val : float
+            Filtration value.
+        min_bar_length : float
+            Minimum lifespan to include.
+
+        Returns
+        -------
+        list[tuple[PFBar, SignedChain]]
+            Active bars and their cycles.
+        """
+        active = []
+        for bar in self.barcode:
+            if bar.lifespan() < min_bar_length:
+                continue
+            if bar.birth <= filt_val < bar.death:
+                active.append((bar, bar.cycle_at_filtration_value(filt_val=filt_val)))
+        return active
+
     def barcode_cycle_reps(self, relative_position=0.1, min_bar_length: float = 0) -> List[SignedChain]:
         """
         Return the list of cycle representatives for all bars in the barcode.
@@ -1218,7 +1245,242 @@ class PersistenceForest:
         self.color_map_bars = {bars_sorted[i]: colors[i] for i in range(len(bars_sorted))}
         return
 
-    # ----- plotting tools -------
+    def _get_color_map(self, coloring: Literal["forest", "bars"] = "forest"):
+        """
+        Return a color map {bar: color}, building it on first use.
+
+        Parameters
+        ----------
+        coloring : {"forest", "bars"}
+            Which color scheme to use.
+
+        Returns
+        -------
+        dict[PFBar, str]
+            Mapping from bars to CSS/hex color strings.
+        """
+        if coloring == "forest":
+            if not hasattr(self, "color_map_forest"):
+                self._build_color_map_forest()
+            return self.color_map_forest
+        elif coloring == "bars":
+            if not hasattr(self, "color_map_bars"):
+                self._build_color_map_bars()
+            return self.color_map_bars
+        else:
+            raise ValueError("coloring must be 'forest' or 'bars'")
+
+    # ----- filtration plotting helpers -------
+
+    def _simplices_present_at_filtration(self, filt_val: float) -> Dict[str, Any]:
+        """
+        Return simplices present at a filtration value.
+
+        For ambient dimension 2:
+            returns edges, triangles
+        For ambient dimension 3:
+            returns triangles, tetrahedra
+
+        Parameters
+        ----------
+        filt_val : float
+            Filtration threshold.
+
+        Returns
+        -------
+        dict
+            Dictionary containing present simplices.
+        """
+        if self.dim not in (2, 3):
+            raise ValueError("Plotting is only implemented for ambient dimensions 2 and 3.")
+
+        out: Dict[str, Any] = {
+            "edges": [],
+            "triangles": [],
+            "tetrahedra": [],
+        }
+
+        for simplex, f in self.filtration:
+            if f > filt_val:
+                break
+
+            simplex_t = tuple(simplex)
+
+            if self.dim == 2:
+                if len(simplex_t) == 2:
+                    out["edges"].append(simplex_t)
+                elif len(simplex_t) == 3:
+                    out["triangles"].append(simplex_t)
+
+            elif self.dim == 3:
+                if len(simplex_t) == 2:
+                    out["edges"].append(simplex_t)
+                elif len(simplex_t) == 3:
+                    out["triangles"].append(simplex_t)
+                elif len(simplex_t) == 4:
+                    out["tetrahedra"].append(simplex_t)
+
+        return out
+    
+    def _boundary_triangles_from_tetrahedra(
+        self,
+        tetrahedra: List[Tuple[int, int, int, int]],
+    ) -> List[Tuple[int, int, int]]:
+        """
+        Compute the boundary triangles of a tetrahedral complex.
+
+        A triangular face is on the boundary iff it appears in exactly one
+        tetrahedron.
+
+        Parameters
+        ----------
+        tetrahedra : list[tuple[int, int, int, int]]
+            Present tetrahedra.
+
+        Returns
+        -------
+        list[tuple[int, int, int]]
+            Boundary triangular faces with canonical vertex order.
+        """
+        face_count: Dict[Tuple[int, int, int], int] = defaultdict(int)
+
+        for tet in tetrahedra:
+            for face in itertools.combinations(tet, 3):
+                face_count[key(face)] += 1 # type: ignore
+
+        boundary_faces = [face for face, c in face_count.items() if c == 1]
+        return boundary_faces
+
+    def _complex_snapshot_at_filtration(self, filt_val: float) -> Dict[str, Any]:
+        """
+        Build a backend-agnostic snapshot of the complex and active cycles at
+        a given filtration value.
+
+        Parameters
+        ----------
+        filt_val : float
+            Filtration threshold.
+
+        Returns
+        -------
+        dict
+            Snapshot containing points and present simplices.
+        """
+        pts = np.asarray(self.point_cloud, dtype=float)
+        simplices = self._simplices_present_at_filtration(filt_val)
+
+        snapshot: Dict[str, Any] = {
+            "dimension": self.dim,
+            "filt_val": float(filt_val),
+            "points": pts,
+        }
+
+        if self.dim == 2:
+            snapshot["edges"] = simplices["edges"]
+            snapshot["triangles"] = simplices["triangles"]
+
+        elif self.dim == 3:
+            tetrahedra = simplices["tetrahedra"]
+            standalone_triangles = simplices["triangles"]
+
+            boundary_from_tets = self._boundary_triangles_from_tetrahedra(tetrahedra)
+
+            tet_face_keys = {tuple(sorted(face)) for face in boundary_from_tets}
+            standalone_keys = {tuple(sorted(face)) for face in standalone_triangles}
+
+            # Include all boundary faces from tetrahedra, plus triangles not covered by them.
+            boundary_faces = list(tet_face_keys | standalone_keys)
+
+            snapshot["triangles"] = boundary_faces
+            snapshot["tetrahedra"] = tetrahedra
+            snapshot["standalone_triangles"] = standalone_triangles
+
+        return snapshot
+
+    def _chain_segments_2d(
+        self,
+        chain: SignedChain,
+        signed: bool = False,
+    ) -> List[np.ndarray]:
+        """
+        Convert a 1-chain to oriented segments in R^2.
+
+        Parameters
+        ----------
+        chain : SignedChain
+            Cycle representative consisting of oriented edges.
+        signed : bool
+            If False, cancel opposite-oriented duplicate edges first.
+
+        Returns
+        -------
+        list[np.ndarray]
+            List of 2x2 segment arrays.
+        """
+        if chain.dim() != 1:
+            raise ValueError(f"_chain_segments_2d expected a 1-chain, got dim={chain.dim()}")
+
+        if not signed:
+            chain = chain.unsigned()
+
+        return chain.segments(point_cloud=self.point_cloud)
+
+    def _chain_triangles_3d(
+        self,
+        chain: SignedChain,
+        signed: bool = False,
+    ) -> List[Tuple[int, int, int]]:
+        """
+        Convert a 2-chain to a list of triangular faces in R^3.
+
+        Orientation is currently ignored for rendering; the triangles are
+        returned in their stored vertex order.
+
+        Parameters
+        ----------
+        chain : SignedChain
+            Cycle representative consisting of oriented triangles.
+        signed : bool
+            If False, cancel opposite-oriented duplicate edges first.
+
+        Returns
+        -------
+        list[tuple[int, int, int]]
+            Triangle faces.
+        """
+        if chain.dim() != 2:
+            raise ValueError(f"_chain_triangles_3d expected a 2-chain, got dim={chain.dim()}")
+        
+        if not signed:
+            chain = chain.unsigned()
+
+        return [tuple(simplex) for simplex, _orientation in chain.signed_simplices]
+
+    def _empty_scatter_2d(self, name: str, showlegend: bool = False):
+        import plotly.graph_objects as go
+        return go.Scatter(
+            x=[np.nan],
+            y=[np.nan],
+            mode="lines",
+            name=name,
+            showlegend=showlegend,
+            hoverinfo="skip",
+        )
+
+    def _empty_cycle_trace_2d(self, name: str = "cycle", showlegend: bool = False):
+        import plotly.graph_objects as go
+        return go.Scatter(
+            x=[np.nan],
+            y=[np.nan],
+            mode="lines",
+            line=dict(width=3),
+            name=name,
+            showlegend=showlegend,
+            hoverinfo="skip",
+            visible=True,
+        )
+
+    # ----- filtration plotting tools -------
 
     def plot_at_filtration(
         self,
@@ -1281,16 +1543,8 @@ class PersistenceForest:
         
         if self.dim != 2:
             raise ValueError("plot_at_filtration only implemented for dimension 2")
-        
-        if coloring == "forest":
-            #built color map if it has not already been done
-            if not hasattr(self,"color_map_forest"):
-                self._build_color_map_forest()
-            color_map = self.color_map_forest
-        elif coloring == "bars":
-            if not hasattr(self,"color_map_bars"):
-                self._build_color_map_bars()
-            color_map = self.color_map_bars
+
+        color_map = self._get_color_map(coloring=coloring)
 
         # --- Prep
         pts = np.asarray(self.point_cloud, dtype=float)
@@ -1348,10 +1602,7 @@ class PersistenceForest:
                     cycle = bar.cycle_at_filtration_value(filt_val=filt_val)    
 
                     # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-                    if remove_double_edges:
-                        segments = cycle.without_double_edges().segments(point_cloud=self.point_cloud)
-                    else:
-                        segments = cycle.segments(point_cloud=self.point_cloud)
+                    segments = self._chain_segments_2d(chain=cycle,signed=(not remove_double_edges))
 
                     # Thicker colored edges along the loop
                     loop_coll = LineCollection(segments, linewidths=linewidth_cycle, colors=[color_map[bar]], zorder=5)
@@ -1400,7 +1651,7 @@ class PersistenceForest:
         # --- Aesthetics
         ax.set_aspect("equal", adjustable="box")
         if title is None:
-            ax.set_title(fr"$\alpha \leq$ {filt_val:.4g}  •  edges/triangles in filtration + active loops")
+            ax.set_title(fr"Filtration at radius r= {filt_val:.4g} ")
         else:
             ax.set_title(title)
         #ax.set_xlabel("x")
@@ -1467,16 +1718,8 @@ class PersistenceForest:
         -------
         matplotlib.axes.Axes
         """
-        if coloring == "forest":
-            if not hasattr(self, "color_map_forest"):
-                self._build_color_map_forest()
-            color_map = self.color_map_forest
-        elif coloring == "bars":
-            if not hasattr(self, "color_map_bars"):
-                self._build_color_map_bars()
-            color_map = self.color_map_bars
-        else:
-            raise ValueError("Unsupported coloring option. Use 'forest' or 'bars'.")
+        
+        color_map = self._get_color_map(coloring=coloring)
 
         pts = np.asarray(self.point_cloud, dtype=float)
         if pts.ndim != 2 or pts.shape[1] != 2:
@@ -1725,15 +1968,7 @@ class PersistenceForest:
         if self.dim != 2:
             raise ValueError("plot_barcode_cycle_reps only implemented for dimension 2")
         
-        if coloring == "forest":
-            #built color map if it has not already been done
-            if not hasattr(self,"color_map_forest"):
-                self._build_color_map_forest()
-            color_map = self.color_map_forest
-        elif coloring == "bars":
-            if not hasattr(self,"color_map_bars"):
-                self._build_color_map_bars()
-            color_map = self.color_map_bars
+        color_map = self._get_color_map(coloring=coloring)
 
         # --- Prep
         pts = np.asarray(self.point_cloud, dtype=float)
@@ -1754,10 +1989,7 @@ class PersistenceForest:
                 cycle = bar.cycle_at_filtration_value(filt_val=bar.birth + bar.lifespan()*relative_position)    
 
                 # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-                if remove_double_edges:
-                    segments = cycle.without_double_edges().segments(point_cloud=self.point_cloud)
-                else:
-                    segments = cycle.segments(point_cloud=self.point_cloud)
+                segments = self._chain_segments_2d(chain=cycle,signed=(not remove_double_edges))
 
                 # Thicker colored edges along the loop
                 loop_coll = LineCollection(segments, linewidths=linewidth_cycle, colors=[color_map[bar]], zorder=5)
@@ -1821,6 +2053,615 @@ class PersistenceForest:
             plt.show()
         return ax
 
+    # ----- plotly snapshots --------
+
+    def _plotly_traces_for_snapshot_2d(
+        self,
+        snapshot: Dict[str, Any],
+        color_map: Dict[object, str],
+        show_cycles: bool = True,
+        fill_triangles: bool = True,
+        signed: bool = False,
+        min_bar_length: float = 0.0,
+        vertex_size: float = 3.0,
+        linewidth_filt: float = 1.0,
+        linewidth_cycle: float = 3.0,
+        max_cycle_slots: Optional[int] = None,
+    ) -> List[Any]:
+        """
+        Build Plotly traces for a 2D filtration snapshot.
+
+        Parameters
+        ----------
+        snapshot : dict
+            Output of _complex_snapshot_at_filtration.
+        color_map : dict[PFBar, str]
+            Bar-to-color mapping.
+
+        Returns
+        -------
+        list
+            List of Plotly traces.
+        """
+        import plotly.graph_objects as go
+        pts = snapshot["points"]
+        filt_val = snapshot["filt_val"]
+        edges = snapshot["edges"]
+        triangles = snapshot["triangles"]
+
+        traces: List[Any] = []
+
+        # Filled triangles
+        x_tri = []
+        y_tri = []
+        if fill_triangles and triangles:
+            for tri in triangles:
+                tri_pts = pts[list(tri)]
+                x_tri.extend([tri_pts[0, 0], tri_pts[1, 0], tri_pts[2, 0], tri_pts[0, 0], None])
+                y_tri.extend([tri_pts[0, 1], tri_pts[1, 1], tri_pts[2, 1], tri_pts[0, 1], None])
+
+        traces.append(
+            go.Scatter(
+                x=x_tri,
+                y=y_tri,
+                mode="lines",
+                fill="toself",
+                line=dict(width=0.5, color="rgba(120,120,120,0.25)"),
+                fillcolor="rgba(31,119,180,0.18)",
+                hoverinfo="skip",
+                name="triangles",
+                showlegend=True,
+            )
+        )
+
+        # Complex edges
+        x_edge = []
+        y_edge = []
+        if edges:
+            for e in edges:
+                p = pts[list(e)]
+                x_edge.extend([p[0, 0], p[1, 0], None])
+                y_edge.extend([p[0, 1], p[1, 1], None])
+
+        traces.append(
+            go.Scatter(
+                x=x_edge,
+                y=y_edge,
+                mode="lines",
+                line=dict(width=linewidth_filt, color="rgba(60,60,60,0.9)"),
+                hoverinfo="skip",
+                name="edges",
+                showlegend=True,
+            )
+        )
+
+        # Points
+        traces.append(
+            go.Scatter(
+                x=pts[:, 0],
+                y=pts[:, 1],
+                mode="markers",
+                marker=dict(size=vertex_size, color="black"),
+                name="points",
+                showlegend=True,
+                hovertemplate="(%{x:.3f}, %{y:.3f})<extra></extra>",
+            )
+        )
+
+        # Active cycles
+        active = []
+        if show_cycles:
+            active = self._active_bars_with_cycles_at(
+                filt_val=filt_val,
+                min_bar_length=min_bar_length,
+            )
+            active = sorted(active, key=lambda bc: bc[0].lifespan(), reverse=True)
+
+
+        if max_cycle_slots is None:
+            max_cycle_slots = len(active)
+
+        for i in range(max_cycle_slots):
+            if i < len(active):
+                bar, cycle = active[i]
+                segments = self._chain_segments_2d(
+                    cycle,
+                    signed=signed,
+                )
+
+                x_c, y_c = [], []
+                for seg in segments:
+                    x_c.extend([seg[0, 0], seg[1, 0], None])
+                    y_c.extend([seg[0, 1], seg[1, 1], None])
+
+                traces.append(
+                    go.Scatter(
+                        x=x_c,
+                        y=y_c,
+                        mode="lines",
+                        line=dict(width=linewidth_cycle, color=color_map[bar]),
+                        name=f"cycle {i + 1}",
+                        legendgroup=f"bar-{id(bar)}",
+                        showlegend=(i < 12),
+                        visible=True,
+                        hovertemplate=(
+                            f"birth={bar.birth:.4g}<br>"
+                            f"death={bar.death:.4g}<br>"
+                            f"lifespan={bar.lifespan():.4g}"
+                            "<extra></extra>"
+                        ),
+                    )
+                )
+            else:
+                traces.append(
+                    go.Scatter(
+                        x=[np.nan],
+                        y=[np.nan],
+                        mode="lines",
+                        line=dict(width=linewidth_cycle, color="rgba(0,0,0,0)"),
+                        name=f"cycle {i + 1}",
+                        showlegend=False,
+                        visible=True,
+                        hoverinfo="skip",
+                    )
+                )
+
+        return traces
+
+    def _plotly_traces_for_snapshot_3d(
+        self,
+        snapshot: Dict[str, Any],
+        color_map: Dict["PFBar", str],
+        signed: bool = False,
+        show_cycles: bool = True,
+        show_complex: bool = True,
+        min_bar_length: float = 0.0,
+        complex_opacity: float = 0.20,
+        cycle_opacity: float = 0.55,
+        vertex_size: float = 3.0,
+        max_cycle_slots: Optional[int] = None,
+    ) -> List[Any]:
+        """
+        Build Plotly traces for a 3D filtration snapshot.
+
+        This version is animation-safe: it always returns the same trace layout
+        when max_cycle_slots is fixed.
+
+        Trace order:
+            0. complex boundary mesh
+            1. points
+            2+. cycle mesh slots
+        """
+        import plotly.graph_objects as go
+        pts = snapshot["points"]
+        filt_val = snapshot["filt_val"]
+        boundary_triangles = snapshot["triangles"]
+
+        traces: List[Any] = []
+
+        # --- complex boundary mesh: always present as trace slot 0
+        if show_complex and boundary_triangles:
+            i_idx = [tri[0] for tri in boundary_triangles]
+            j_idx = [tri[1] for tri in boundary_triangles]
+            k_idx = [tri[2] for tri in boundary_triangles]
+
+            traces.append(
+                go.Mesh3d(
+                    x=pts[:, 0],
+                    y=pts[:, 1],
+                    z=pts[:, 2],
+                    i=i_idx,
+                    j=j_idx,
+                    k=k_idx,
+                    opacity=complex_opacity,
+                    color="lightblue",
+                    name="complex boundary",
+                    hoverinfo="skip",
+                    showlegend=True,
+                )
+            )
+        else:
+            traces.append(
+                go.Mesh3d(
+                    x=[np.nan],
+                    y=[np.nan],
+                    z=[np.nan],
+                    i=[],
+                    j=[],
+                    k=[],
+                    opacity=complex_opacity,
+                    color="lightblue",
+                    name="complex boundary",
+                    hoverinfo="skip",
+                    showlegend=True,
+                    visible=True,
+                )
+            )
+
+        # --- points: always present as trace slot 1
+        traces.append(
+            go.Scatter3d(
+                x=pts[:, 0],
+                y=pts[:, 1],
+                z=pts[:, 2],
+                mode="markers",
+                marker=dict(size=vertex_size, color="black"),
+                name="points",
+                showlegend=True,
+                hovertemplate="(%{x:.3f}, %{y:.3f}, %{z:.3f})<extra></extra>",
+            )
+        )
+
+        # --- active cycles
+        active = []
+        if show_cycles:
+            active = self._active_bars_with_cycles_at(
+                filt_val=filt_val,
+                min_bar_length=min_bar_length,
+            )
+            active = sorted(active, key=lambda bc: bc[0].lifespan(), reverse=True)
+
+        if max_cycle_slots is None:
+            max_cycle_slots = len(active)
+
+        for idx in range(max_cycle_slots):
+            if idx < len(active):
+                bar, cycle = active[idx]
+                tri_faces = self._chain_triangles_3d(cycle, signed=signed)
+
+                if tri_faces:
+                    i_idx = [tri[0] for tri in tri_faces]
+                    j_idx = [tri[1] for tri in tri_faces]
+                    k_idx = [tri[2] for tri in tri_faces]
+
+                    traces.append(
+                        go.Mesh3d(
+                            x=pts[:, 0],
+                            y=pts[:, 1],
+                            z=pts[:, 2],
+                            i=i_idx,
+                            j=j_idx,
+                            k=k_idx,
+                            opacity=cycle_opacity,
+                            color=color_map[bar],
+                            name=f"cycle {idx + 1}",
+                            legendgroup=f"bar-{id(bar)}",
+                            showlegend=(idx < 12),
+                            visible=True,
+                            hovertemplate=(
+                                f"birth={bar.birth:.4g}<br>"
+                                f"death={bar.death:.4g}<br>"
+                                f"lifespan={bar.lifespan():.4g}"
+                                "<extra></extra>"
+                            ),
+                        )
+                    )
+                else:
+                    traces.append(
+                        go.Mesh3d(
+                            x=[np.nan],
+                            y=[np.nan],
+                            z=[np.nan],
+                            i=[],
+                            j=[],
+                            k=[],
+                            opacity=cycle_opacity,
+                            color=color_map[bar],
+                            name=f"cycle {idx + 1}",
+                            legendgroup=f"bar-{id(bar)}",
+                            showlegend=False,
+                            visible=True,
+                            hoverinfo="skip",
+                        )
+                    )
+            else:
+                traces.append(
+                    go.Mesh3d(
+                        x=[np.nan],
+                        y=[np.nan],
+                        z=[np.nan],
+                        i=[],
+                        j=[],
+                        k=[],
+                        opacity=cycle_opacity,
+                        color="rgba(0,0,0,0)",
+                        name=f"cycle {idx + 1}",
+                        showlegend=False,
+                        visible=True,
+                        hoverinfo="skip",
+                    )
+                )
+
+        return traces
+    # ------ Plotly public API ---------
+
+    def plot_at_filtration_plotly(
+        self,
+        filt_val: float,
+        coloring: Literal["forest", "bars"] = "forest",
+        show_cycles: bool = True,
+        fill_triangles: bool = True,
+        signed: bool = False,
+        min_bar_length: float = 0.0,
+        show_complex: bool = True,
+        complex_opacity: float = 0.20,
+        cycle_opacity: float = 0.55,
+        show: bool = True,
+        vertex_size: float = 3.0,
+        width: Optional[int] = None,   
+        height: Optional[int] = None,
+    ):
+        """
+        Plot the complex and active cycles at a single filtration value using Plotly.
+
+        Supports ambient dimensions 2 and 3.
+
+        Parameters
+        ----------
+        filt_val : float
+            Filtration threshold.
+        coloring : {"forest", "bars"}
+            Which color map to use for active bars.
+        show_cycles : bool
+            If True, overlay cycle representatives.
+        fill_triangles : bool
+            For 2D only: if True, fill present triangles.
+        remove_double_edges : bool
+            For 2D only: cancel opposite-oriented duplicate edges in cycle reps.
+        min_bar_length : float
+            Only show bars with lifespan >= min_bar_length.
+        show_complex : bool
+            For 3D only: whether to show the complex boundary mesh.
+        complex_opacity : float
+            Opacity of the 3D complex mesh.
+        cycle_opacity : float
+            Opacity of 3D cycle meshes.
+        show : bool
+            If True, call fig.show().
+
+        Returns
+        -------
+        plotly.graph_objects.Figure
+        """
+        import plotly.graph_objects as go
+        if self.dim not in (2, 3):
+            raise ValueError("plot_at_filtration_plotly is only implemented for dimensions 2 and 3.")
+
+        color_map = self._get_color_map(coloring=coloring)
+        snapshot = self._complex_snapshot_at_filtration(filt_val=filt_val)
+
+        if self.dim == 2:
+            traces = self._plotly_traces_for_snapshot_2d(
+                snapshot=snapshot,
+                color_map=color_map,
+                show_cycles=show_cycles,
+                fill_triangles=fill_triangles,
+                signed=signed,
+                min_bar_length=min_bar_length,
+                vertex_size = vertex_size
+            )
+
+            fig = go.Figure(data=traces)
+            fig.update_layout(
+                title=f"Filtration value r = {filt_val:.4g}",
+                xaxis_title="x",
+                yaxis_title="y",
+                template="plotly_white",
+                hovermode="closest",
+            )
+            fig.update_yaxes(scaleanchor="x", scaleratio=1)
+
+        else:
+            traces = self._plotly_traces_for_snapshot_3d(
+                snapshot=snapshot,
+                color_map=color_map,
+                show_cycles=show_cycles,
+                show_complex=show_complex,
+                min_bar_length=min_bar_length,
+                complex_opacity=complex_opacity,
+                cycle_opacity=cycle_opacity,
+                vertex_size = vertex_size
+            )
+
+            fig = go.Figure(data=traces)
+            fig.update_layout(
+                title=f"Filtration value r= {filt_val:.4g}",
+                scene=dict(
+                    xaxis_title="x",
+                    yaxis_title="y",
+                    zaxis_title="z",
+                    aspectmode="data",
+                ),
+                template="plotly_white",
+                width = width,   
+                height = height,
+            )
+
+        if show:
+            fig.show()
+
+        return fig
+
+    def interactive_plot_filtration(
+        self,
+        coloring: Literal["forest", "bars"] = "forest",
+        show_cycles: bool = True,
+        signed: bool = False,
+        filt_max: Optional[float] = None,
+        min_bar_length: float = 0.0,
+        show_complex: bool = False,
+        complex_opacity: float = 0.20,
+        cycle_opacity: float = 0.55,
+        resolution: int =100,
+        show: bool = True,
+        fill_triangles: bool = True,
+        vertex_size: float = 3.0,
+        width: Optional[int] = None,   
+        height: Optional[int] = None,
+    ):
+        """
+        Create a Plotly slider that moves through filtration values.
+
+        Supports ambient dimensions 2 and 3.
+
+        Parameters
+        ----------
+        filtration_values : sequence[float] | None
+            Explicit slider values. If None, use 100 values between 0 and death of last bar.
+        coloring : {"forest", "bars"}
+            Which bar color map to use.
+        show_cycles : bool
+            If True, overlay active cycle representatives.
+        fill_triangles : bool
+            For 2D only: whether to fill present triangles.
+        signed : bool
+            If False, removes simplices which appear with both orientations.
+        min_bar_length : float
+            Only show bars with lifespan >= min_bar_length.
+        include_bar_endpoints : bool
+            If True, include barcode births/deaths in default frame values.
+        max_frames : int | None
+            Maximum number of frames used when default values are generated.
+        show_complex : bool
+            For 3D only: whether to show the complex boundary mesh.
+        complex_opacity : float
+            Opacity of 3D complex mesh.
+        cycle_opacity : float
+            Opacity of 3D cycle meshes.
+        show : bool
+            If True, call fig.show().
+
+        Returns
+        -------
+        plotly.graph_objects.Figure
+        """
+        import plotly.graph_objects as go
+        if self.dim not in (2, 3):
+            raise ValueError("interactive_plot_filtration is only implemented for dimensions 2 and 3.")
+
+        if filt_max is None:
+            filt_max = max( [bar.death for bar in self.barcode] )*1.03
+
+        filtration_values = np.linspace(0,filt_max,resolution+1)
+
+        if len(filtration_values) == 0:
+            raise ValueError("No filtration values available for interactive plot.")
+
+        color_map = self._get_color_map(coloring=coloring)
+
+        if show_cycles:
+            max_cycle_slots = max(
+                len(self._active_bars_with_cycles_at(v, min_bar_length=min_bar_length))
+                for v in filtration_values
+            )
+        else:
+            max_cycle_slots = 0
+
+        frames = []
+        for v in filtration_values:
+            snapshot = self._complex_snapshot_at_filtration(filt_val=v)
+
+            if self.dim == 2:
+                frame_traces = self._plotly_traces_for_snapshot_2d(
+                    snapshot=snapshot,
+                    color_map=color_map,
+                    show_cycles=show_cycles,
+                    fill_triangles=fill_triangles,
+                    signed=signed,
+                    min_bar_length=min_bar_length,
+                    max_cycle_slots=max_cycle_slots,
+                    vertex_size=vertex_size
+                )
+
+            elif self.dim == 3:
+                frame_traces = self._plotly_traces_for_snapshot_3d(
+                    snapshot=snapshot,
+                    color_map=color_map,
+                    show_cycles=show_cycles,
+                    show_complex=show_complex,
+                    min_bar_length=min_bar_length,
+                    complex_opacity=complex_opacity,
+                    cycle_opacity=cycle_opacity,
+                    signed=signed,
+                    max_cycle_slots=max_cycle_slots,
+                    vertex_size=vertex_size
+                )
+            else:
+                raise ValueError("interactive_plot_filtration is only implemented for dimensions 2 and 3.")
+
+            frames.append(go.Frame(name=f"{v:.12g}", data=frame_traces, traces=list(range(len(frame_traces))),))
+
+        fig = go.Figure(data=frames[0].data, frames=frames)
+
+        slider_steps = []
+        for v in filtration_values:
+            slider_steps.append(
+                dict(
+                    method="animate",
+                    label=f"{v:.4g}",
+                    args=[
+                        [f"{v:.12g}"],
+                        {
+                            "mode": "immediate",
+                            "frame": {"duration": 0, "redraw": True},
+                            "transition": {"duration": 0},
+                        },
+                    ],
+                )
+            )
+
+        sliders = [
+            dict(
+                active=0,
+                currentvalue={"prefix": "r = "},
+                pad={"t": 40},
+                steps=slider_steps,
+            )
+        ]
+
+        if self.dim == 2:
+            fig.update_layout(
+                title="Interactive filtration plot",
+                xaxis_title="x",
+                yaxis_title="y",
+                template="plotly_white",
+                hovermode="closest",
+                sliders=sliders,
+                width=width,
+                height=height,
+            )
+            fig.update_yaxes(scaleanchor="x", scaleratio=1)
+        else:
+            fig.update_layout(
+                title="Interactive filtration plot",
+                scene=dict(
+                    xaxis_title="x",
+                    yaxis_title="y",
+                    zaxis_title="z",
+                    aspectmode="data",
+                ),
+                template="plotly_white",
+                sliders=sliders,
+                width=width,
+                height=height,
+            )
+
+        fig.update_layout(
+            legend=dict(
+                x=1.02,
+                y=1,
+                xanchor="left",
+                yanchor="top",
+            ),
+            margin=dict(r=180),
+        )
+
+        if show:
+            fig.show()
+
+        return fig
+
+    # ------ forest plotting tools ------------
 
     def plot_dendrogram(
         self,
@@ -1967,7 +2808,7 @@ class PersistenceForest:
         signed : bool, optional
             If ``True`` (default), ``cycle_func`` is called on the signed
             cycle representatives. If ``False``, the chains are first
-            passed through ``chain.without_double_edges()``.
+            passed through ``chain.unsigned()``.
         bar :
             Bar to use for the measurement. If ``None``, the method uses
             ``self.max_bar()`` inside the generic helper.
@@ -1994,7 +2835,7 @@ class PersistenceForest:
         else:
             def _cycle_value(chain, point_cloud):
                 # `chain` is a SignedChain
-                return float(cycle_func(chain.without_double_edges(), point_cloud))
+                return float(cycle_func(chain.unsigned(), point_cloud))
 
         return animate_barcode_measurement_generic(
             forest=self,
@@ -2009,7 +2850,7 @@ class PersistenceForest:
     def plot_barcode_measurement(
         self,
         cycle_func,
-        signed: bool = True,
+        signed: bool = False,
         bar = None,
         ax=None,
         x_range: Optional[Tuple[float, float]] = None,
@@ -2057,7 +2898,7 @@ class PersistenceForest:
         else:
             def _cycle_value(chain, point_cloud):
                 # `chain` is a SignedChain
-                return float(cycle_func(chain.without_double_edges(), point_cloud))
+                return float(cycle_func(chain.unsigned(), point_cloud))
 
         return plot_barcode_measurement_generic(
             forest=self,
@@ -2085,7 +2926,7 @@ class PersistenceForest:
         min_bar_length: float = 0.0,
         x_grid: Optional[NDArray[np.float64]] = None,
         cache: bool = True,
-        signed: bool = True,
+        signed: bool = False,
         cache_functionals: bool = False,
         functionals_label: Optional[str] = None,
         compute_functionals: bool = True,
@@ -2130,10 +2971,8 @@ class PersistenceForest:
         else:
             def _cycle_value(chain, point_cloud):
                 # `chain` is a SignedChain
-                return float(cycle_func(chain.without_double_edges(), point_cloud))
+                return float(cycle_func(chain.unsigned(), point_cloud))
     
-            
-
         from .forest_landscapes import compute_generalized_landscape_family
 
         return compute_generalized_landscape_family(
@@ -2203,4 +3042,3 @@ class PersistenceForest:
         from .forest_landscapes import plot_landscape_comparison_between_functionals
         return plot_landscape_comparison_between_functionals(self, labels=labels, k=k, ax=ax, title=title, *args, **kwargs)
 
-# --------- Animate comparison ------------
