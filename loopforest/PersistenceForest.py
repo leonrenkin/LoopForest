@@ -1542,7 +1542,9 @@ class PersistenceForest:
         """
         
         if self.dim != 2:
-            raise ValueError("plot_at_filtration only implemented for dimension 2")
+            if self.dim == 3:
+                raise ValueError("For 3d points clouds, use plot_at_filtration_plotly() or interactive_plot_filtration() methods. The method plot_at_filtration() is only implemented for dimension 2")
+            raise ValueError("plot_at_filtration() only implemented for dimension 2")
 
         color_map = self._get_color_map(coloring=coloring)
 
