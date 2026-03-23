@@ -663,7 +663,13 @@ def _animate_filtration_generic(
                 writer = FFMpegWriter(fps=fps, bitrate=2000)
                 anim.save(fname, writer=writer, dpi=dpi, savefig_kwargs=savefig_kwargs)
             elif ext in {"gif", "gifv"}:
-                from matplotlib.animation import PillowWriter
+                try:
+                    from matplotlib.animation import PillowWriter
+                except ImportError as e:
+                    raise RuntimeError(
+                        "Saving as GIF requires Pillow. Install it with `pip install pillow` "
+                        "or `pip install \".[animation]\"`."
+                    ) from e
                 writer = PillowWriter(fps=fps)
                 anim.save(fname, writer=writer, dpi=dpi, savefig_kwargs=savefig_kwargs)
             else:
@@ -903,7 +909,8 @@ def animate_filtration_pair(
                 from matplotlib.animation import PillowWriter
             except ImportError as e:
                 raise RuntimeError(
-                    "Saving as GIF requires Pillow. Install it with `pip install pillow`."
+                    "Saving as GIF requires Pillow. Install it with `pip install pillow` "
+                    "or `pip install \".[animation]\"`."
                 ) from e
             writer = PillowWriter(fps=fps)
             anim.save(fname, writer=writer, dpi=dpi)

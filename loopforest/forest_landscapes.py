@@ -1862,7 +1862,8 @@ def animate_barcode_measurement_generic(
                 from matplotlib.animation import PillowWriter
             except ImportError as e:  # optional dependency
                 raise RuntimeError(
-                    "Saving as GIF requires Pillow. Install it with `pip install pillow`."
+                    "Saving as GIF requires Pillow. Install it with `pip install pillow` "
+                    "or `pip install \".[animation]\"`."
                 ) from e
             writer = PillowWriter(fps=fps)
             anim.save(fname, writer=writer, dpi=dpi)

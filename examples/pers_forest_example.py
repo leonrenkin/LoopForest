@@ -36,10 +36,6 @@ pers_forest.plot_at_filtration(0.2)
 pers_forest.plot_at_filtration(0.6)
 pers_forest.plot_at_filtration(0.7)
 
-# %%
-#example of interactive 2d plot
-
-ui = pers_forest.interactive_plot_filtration(show_cycles=True, height=800)
 
 # %%
 #This cell showcases cycle representative extraction and plotting
@@ -172,10 +168,4 @@ vec.fit(forests_train)
 X_train = vec.transform(forests_train)
 X_test  = vec.transform(forests_test)
 
-# 6. Use X_train / X_test in any ML model
-from sklearn.ensemble import RandomForestClassifier
-y_train = [0] #set categories for forest_train/X_train (rightn now this is nonsense)
-clf = RandomForestClassifier()
-clf.fit(X_train, y_train)
-y_pred = clf.predict(X_test)
 # %%

@@ -1456,8 +1456,20 @@ class PersistenceForest:
 
         return [tuple(simplex) for simplex, _orientation in chain.signed_simplices]
 
+    @staticmethod
+    def _require_plotly():
+        try:
+            import plotly.graph_objects as go
+        except ImportError as e:
+            raise RuntimeError(
+                "Plotly support requires the optional dependency 'plotly'. "
+                "Install it with `pip install \".[plotly]\"` (local repo) or "
+                "`pip install loopforest[plotly]`."
+            ) from e
+        return go
+
     def _empty_scatter_2d(self, name: str, showlegend: bool = False):
-        import plotly.graph_objects as go
+        go = self._require_plotly()
         return go.Scatter(
             x=[np.nan],
             y=[np.nan],
@@ -1468,7 +1480,7 @@ class PersistenceForest:
         )
 
     def _empty_cycle_trace_2d(self, name: str = "cycle", showlegend: bool = False):
-        import plotly.graph_objects as go
+        go = self._require_plotly()
         return go.Scatter(
             x=[np.nan],
             y=[np.nan],
@@ -2085,7 +2097,7 @@ class PersistenceForest:
         list
             List of Plotly traces.
         """
-        import plotly.graph_objects as go
+        go = self._require_plotly()
         pts = snapshot["points"]
         filt_val = snapshot["filt_val"]
         edges = snapshot["edges"]
@@ -2234,7 +2246,7 @@ class PersistenceForest:
             1. points
             2+. cycle mesh slots
         """
-        import plotly.graph_objects as go
+        go = self._require_plotly()
         pts = snapshot["points"]
         filt_val = snapshot["filt_val"]
         boundary_triangles = snapshot["triangles"]
@@ -2389,6 +2401,7 @@ class PersistenceForest:
         complex_opacity: float = 0.20,
         cycle_opacity: float = 0.55,
         show: bool = True,
+        renderer: Optional[str] = None,
         vertex_size: float = 3.0,
         width: Optional[int] = None,   
         height: Optional[int] = None,
@@ -2420,12 +2433,14 @@ class PersistenceForest:
             Opacity of 3D cycle meshes.
         show : bool
             If True, call fig.show().
+        renderer : str | None
+            Plotly renderer used by fig.show()
 
         Returns
         -------
         plotly.graph_objects.Figure
         """
-        import plotly.graph_objects as go
+        go = self._require_plotly()
         if self.dim not in (2, 3):
             raise ValueError("plot_at_filtration_plotly is only implemented for dimensions 2 and 3.")
 
@@ -2480,7 +2495,7 @@ class PersistenceForest:
             )
 
         if show:
-            fig.show()
+            fig.show(renderer=renderer)
 
         return fig
 
@@ -2496,6 +2511,7 @@ class PersistenceForest:
         cycle_opacity: float = 0.55,
         resolution: int =100,
         show: bool = True,
+        renderer: Optional[str] = None,
         fill_triangles: bool = True,
         vertex_size: float = 3.0,
         width: Optional[int] = None,   
@@ -2532,12 +2548,14 @@ class PersistenceForest:
             Opacity of 3D cycle meshes.
         show : bool
             If True, call fig.show().
+        renderer : str | None
+            Plotly renderer used by fig.show()
 
         Returns
         -------
         plotly.graph_objects.Figure
         """
-        import plotly.graph_objects as go
+        go = self._require_plotly()
         if self.dim not in (2, 3):
             raise ValueError("interactive_plot_filtration is only implemented for dimensions 2 and 3.")
 
@@ -2659,7 +2677,7 @@ class PersistenceForest:
         )
 
         if show:
-            fig.show()
+            fig.show(renderer=renderer)
 
         return fig
 
@@ -3043,4 +3061,3 @@ class PersistenceForest:
         """
         from .forest_landscapes import plot_landscape_comparison_between_functionals
         return plot_landscape_comparison_between_functionals(self, labels=labels, k=k, ax=ax, title=title, *args, **kwargs)
-

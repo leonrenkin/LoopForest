@@ -20,6 +20,17 @@ git clone https://github.com/leonrenkin/LoopForest.git
 cd LoopForest
 pip install .
 ```
+Optional extras:
+```bash
+# Plotly-based 2D/3D interactive plotting
+pip install ".[plotly]"
+
+# Notebook inline rendering (MIME/widget renderers)
+pip install ".[notebook]"
+
+# GIF export via Pillow
+pip install ".[animation]"
+```
 
 ## Quickstart
 ```python
