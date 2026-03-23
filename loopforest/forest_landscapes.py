@@ -165,7 +165,7 @@ class StepFunctionData:
 
         return ax
     
-    def eval_on_grid(self, x_grid: NDArray[np.float64]) -> NDArray[np.float64]:
+    def eval_on_grid(self, grid: NDArray[np.float64]) -> NDArray[np.float64]:
         """
         Evaluate the step function on a given grid of points.
 
@@ -180,15 +180,15 @@ class StepFunctionData:
         numpy.ndarray
             Array of function values at the provided grid points.
         """
-        if x_grid.size == 0:
+        if grid.size == 0:
             raise ValueError("x_grid must be non-empty")
-        if not np.all(np.isfinite(x_grid)):
+        if not np.all(np.isfinite(grid)):
             raise ValueError("x_grid contains non-finite values")
-        if np.any(np.diff(x_grid) < 0):
+        if np.any(np.diff(grid) < 0):
             raise ValueError("x_grid must be sorted in non-decreasing order")
 
-        x_grid = np.asarray(x_grid, dtype=float).ravel()
-        y_vals = np.full_like(x_grid, fill_value=self.baseline, dtype=float)
+        x_grid = np.asarray(grid, dtype=float).ravel()
+        y_vals = np.full_like(grid, fill_value=self.baseline, dtype=float)
 
         if self.starts.size == 0:
             return np.full_like(x_grid, fill_value=float(self.baseline), dtype=float)
@@ -278,7 +278,7 @@ class BarcodeFunctionals:
     
     def evaluate_on_grid(
         self,
-        x_grid: NDArray[np.float64],
+        grid: NDArray[np.float64],
         bars: Optional[Sequence[Union[int, Any]]] = None,
     ) -> NDArray[np.float64]:
         """Evaluate stored per-bar step functions on a common grid.
@@ -297,7 +297,7 @@ class BarcodeFunctionals:
             Array of shape (B, G) where G=len(grid) and B is the number of
             requested bars.
         """
-        grid_arr = np.asarray(x_grid, dtype=float).ravel()
+        grid_arr = np.asarray(grid, dtype=float).ravel()
         if grid_arr.size == 0:
             raise ValueError("grid must be non-empty")
         if not np.all(np.isfinite(grid_arr)):
