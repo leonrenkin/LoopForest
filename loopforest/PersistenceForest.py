@@ -1382,6 +1382,7 @@ class PersistenceForest:
         elif self.dim == 3:
             tetrahedra = simplices["tetrahedra"]
             standalone_triangles = simplices["triangles"]
+            edges = simplices["edges"]
 
             boundary_from_tets = self._boundary_triangles_from_tetrahedra(tetrahedra)
 
@@ -1392,6 +1393,7 @@ class PersistenceForest:
             boundary_faces = list(tet_face_keys | standalone_keys)
 
             snapshot["triangles"] = boundary_faces
+            snapshot["edges"] = edges
             snapshot["tetrahedra"] = tetrahedra
             snapshot["standalone_triangles"] = standalone_triangles
 
@@ -2742,65 +2744,216 @@ class PersistenceForest:
     # --------- animation -------------
 
     def animate_filtration(
-            self,
-            filename: Optional[str] = None,
-            with_barcode: bool = False,
-            *args,
-            **kwargs
+        self,
+        filename: Optional[str] = None,
+        format: Optional[Literal["mp4", "html"]] = None,
+        with_barcode: bool = False,
+        fps: int = 20,
+        frames: int = 200,
+        t_min: Optional[float] = None,
+        t_max: Optional[float] = None,
+        coloring: Literal["forest", "bars"] = "forest",
+        show_cycles: bool = True,
+        signed: bool = False,
+        min_bar_length: float = 0.0,
+        show_complex: bool = True,
+        complex_opacity: float = 0.20,
+        cycle_opacity: float = 0.55,
+        vertex_size: float = 3.0,
+        dpi: int = 200,
+        cloud_figsize: tuple[float, float] = (6.0, 6.0),
+        total_figsize: Optional[tuple[float, float]] = None,
+        barcode_kwargs: Optional[dict] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        camera_mode: Literal["fixed", "orbit"] = "fixed",
+        camera_eye=None,
+        alpha_digits: Optional[int] = None,
     ):
         """
-        Create an animation of the loop forest over the filtration.
+        Animate the filtration with automatic 2D/3D backend dispatch.
+
+        Dispatch rules:
+        - 2D: uses the existing matplotlib animation pipeline.
+        - 3D + MP4: uses a matplotlib frame renderer and ffmpeg assembly.
+        - 3D + HTML: uses the existing Plotly interactive pipeline.
 
         Parameters
         ----------
-        filename : str | None, optional
-            If given, the animation is written to this path.
-        fps : int, optional
-            Frames per second for the saved animation.
-        frames : int, optional
-            Number of time steps (frames) sampled between t_min and t_max.
-        with_barcode : bool, optional
-            If True, show a second panel with the barcode and a moving vertical
-            line indicating the current filtration value.
-        t_min, t_max : float | None, optional
-            Optional lower/upper bounds on the filtration values to animate.
-        dpi : int, optional
-            DPI for saving the animation.
-        cloud_figsize : (float, float), optional
-            Size of the point-cloud panel when with_barcode=False.
-        total_figsize : (float, float) | None, optional
-            Total figure size when with_barcode=True. If None, a reasonable
-            default (10, 5) is used.
-        plot_kwargs : dict | None, optional
-            Extra keyword arguments forwarded to ``plot_at_filtration``.
-            For example::
-                plot_kwargs=dict(
-                    fill_triangles=True,
-                    loop_vertex_markers=False,
-                    point_size=3,
-                    coloring="forest",
-                )
-        barcode_kwargs : dict | None, optional
-            Extra keyword arguments forwarded to ``_plot_barcode`` **except**
-            ``ax`` and ``coloring``, which are managed by this method.
-            For example::
-                barcode_kwargs=dict(
-                    max_bars=150,
-                    min_bar_length=1e-3,
-                    sort="length",
-                    title="Barcode",
-                )
+        filename : str | None
+            Output path. If omitted, a default filename is chosen for exports.
+        format : {"mp4", "html"} | None
+            Output format. If None, inferred from ``filename``; defaults to
+            ``"mp4"`` when not inferable.
+        with_barcode : bool
+            If True, show a barcode panel with a moving filtration marker.
+        fps : int
+            Frames per second for MP4 output.
+        frames : int
+            Number of sampled filtration values.
+        t_min, t_max : float | None
+            Optional filtration interval.
+        coloring : {"forest", "bars"}
+            Color map used for cycle overlays and barcode.
+        show_cycles : bool
+            Whether to display active cycle representatives.
+        signed : bool
+            If False, cancel opposite-oriented duplicate simplices first.
+        min_bar_length : float
+            Minimum lifespan required for displayed bars/cycles.
+        show_complex : bool
+            For 3D only: whether to show complex geometry.
+        complex_opacity : float
+            Opacity of the 3D complex surface.
+        cycle_opacity : float
+            Opacity of the 3D cycle surfaces.
+        vertex_size : float
+            Marker size for point cloud vertices.
+        dpi : int
+            DPI used for matplotlib frame rendering and video export.
+        cloud_figsize : tuple[float, float]
+            Figure size used when ``with_barcode=False`` (matplotlib paths).
+        total_figsize : tuple[float, float] | None
+            Figure size used when ``with_barcode=True`` (matplotlib paths).
+        barcode_kwargs : dict | None
+            Extra kwargs forwarded to barcode plotting for matplotlib paths.
+        width, height : int | None
+            Optional output size in pixels (3D matplotlib/Plotly paths).
+        camera_mode : {"fixed", "orbit"}
+            3D camera mode.
+        camera_eye :
+            3D camera specification (matplotlib ``(elev, azim)`` or dict).
+        alpha_digits : int | None
+            Number of digits shown in the filtration value overlay (matplotlib paths).
 
         Returns
         -------
-        anim : matplotlib.animation.FuncAnimation
-            The created animation. If ``filename`` is not None, the animation
-            is also saved to disk.
-        fig : matplotlib.figure.Figure
-            The figure on which the animation is drawn.
+        object
+            - 2D path: ``(anim, fig)`` from matplotlib.
+            - 3D MP4 path: output filename string.
+            - 3D HTML path: Plotly figure.
         """
-        from .forest_plotting import _animate_filtration_generic
-        return _animate_filtration_generic(self, with_barcode=with_barcode,filename=filename, *args, **kwargs)
+        from pathlib import Path
+        from .forest_plotting import (
+            _animate_filtration_generic,
+            _animate_filtration_generic_3d_matplotlib,
+        )
+
+        out_format = format
+        if out_format is None and filename is not None:
+            suffix = Path(filename).suffix.lower()
+            if suffix in {".mp4", ".html"}:
+                out_format = suffix[1:]
+        if out_format is None:
+            out_format = "mp4"
+        if out_format not in {"mp4", "html"}:
+            raise ValueError(f"Unsupported animation format: {out_format!r}. Use 'mp4' or 'html'.")
+
+        if self.dim == 2:
+            if out_format == "html":
+                raise ValueError("HTML animation export is only implemented for ambient dimension 3.")
+
+            resolved_filename = filename
+            if resolved_filename is not None and Path(resolved_filename).suffix.lower() == "":
+                resolved_filename = f"{resolved_filename}.mp4"
+
+            plot_kwargs = {
+                "fill_triangles": bool(show_complex),
+                "vertex_size": vertex_size,
+                "coloring": coloring,
+                "show_cycles": show_cycles,
+                "remove_double_edges": (not signed),
+                "show": False,
+            }
+            barcode_panel_kwargs = {
+                "coloring": coloring,
+                "min_bar_length": min_bar_length,
+            }
+            if barcode_kwargs is not None:
+                barcode_panel_kwargs.update(barcode_kwargs)
+            t_max_2d = t_max
+            if t_max_2d is None:
+                finite_deaths = [float(bar.death) for bar in self.barcode if np.isfinite(float(bar.death))]
+                if finite_deaths:
+                    t_max_2d = max(finite_deaths)
+                else:
+                    finite_filtration = [float(f) for _, f in self.filtration if np.isfinite(float(f))]
+                    if finite_filtration:
+                        t_max_2d = max(finite_filtration)
+
+            return _animate_filtration_generic(
+                self,
+                filename=resolved_filename,
+                fps=fps,
+                frames=frames,
+                coloring=coloring,
+                with_barcode=with_barcode,
+                t_min=t_min,
+                t_max=t_max_2d,
+                dpi=dpi,
+                cloud_figsize=cloud_figsize,
+                total_figsize=total_figsize,
+                plot_kwargs=plot_kwargs,
+                barcode_kwargs=barcode_panel_kwargs,
+                alpha_digits=alpha_digits,
+            )
+
+        if self.dim == 3:
+            if out_format == "html":
+                fig = self.interactive_plot_filtration(
+                    coloring=coloring,
+                    show_cycles=show_cycles,
+                    signed=signed,
+                    filt_max=t_max,
+                    min_bar_length=min_bar_length,
+                    show_complex=show_complex,
+                    complex_opacity=complex_opacity,
+                    cycle_opacity=cycle_opacity,
+                    resolution=frames,
+                    show=False,
+                    vertex_size=vertex_size,
+                    width=width,
+                    height=height,
+                )
+                resolved_filename = filename if filename is not None else "filtration_animation_3d.html"
+                if Path(resolved_filename).suffix.lower() == "":
+                    resolved_filename = f"{resolved_filename}.html"
+                fig.write_html(str(resolved_filename))
+                return fig
+
+            resolved_filename = filename if filename is not None else "filtration_animation_3d.mp4"
+            if Path(resolved_filename).suffix.lower() == "":
+                resolved_filename = f"{resolved_filename}.mp4"
+
+            _animate_filtration_generic_3d_matplotlib(
+                self,
+                filename=str(resolved_filename),
+                with_barcode=with_barcode,
+                fps=fps,
+                frames=frames,
+                t_min=t_min,
+                t_max=t_max,
+                coloring=coloring,
+                show_cycles=show_cycles,
+                signed=signed,
+                min_bar_length=min_bar_length,
+                show_complex=show_complex,
+                complex_opacity=complex_opacity,
+                cycle_opacity=cycle_opacity,
+                vertex_size=vertex_size,
+                width=width,
+                height=height,
+                camera_mode=camera_mode,
+                camera_eye=camera_eye,
+                dpi=dpi,
+                cloud_figsize=cloud_figsize,
+                total_figsize=total_figsize,
+                barcode_kwargs=barcode_kwargs,
+                alpha_digits=alpha_digits,
+            )
+            return str(resolved_filename)
+
+        raise ValueError("animate_filtration is only implemented for ambient dimensions 2 and 3.")
 
     def animate_barcode_measurement(
                 self,
