@@ -13,6 +13,7 @@ from matplotlib.collections import LineCollection, PolyCollection
 import time
 import seaborn as sns
 from bisect import bisect_right
+import warnings
 
 # ------- helper function -----------
 
@@ -1382,6 +1383,7 @@ class PersistenceForest:
         elif self.dim == 3:
             tetrahedra = simplices["tetrahedra"]
             standalone_triangles = simplices["triangles"]
+            edges = simplices["edges"]
 
             boundary_from_tets = self._boundary_triangles_from_tetrahedra(tetrahedra)
 
@@ -1392,6 +1394,7 @@ class PersistenceForest:
             boundary_faces = list(tet_face_keys | standalone_keys)
 
             snapshot["triangles"] = boundary_faces
+            snapshot["edges"] = edges
             snapshot["tetrahedra"] = tetrahedra
             snapshot["standalone_triangles"] = standalone_triangles
 
@@ -1498,28 +1501,19 @@ class PersistenceForest:
         self,
         filt_val: float,
         ax=None,
+        signed: bool = False,
+        show_cycles: bool = True,
         show: bool = True,
-        fill_triangles: bool = True,
+        show_complex: bool = True,
         figsize: tuple[float, float] = (7, 7), 
         vertex_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
-        show_orientation_arrows: bool = False,
-        remove_double_edges: bool = False,
-        show_cycles: bool = True,
-        linewidth_filt: float = 0.6,
-        linewidth_cycle: float = 1.8,
-        alpha_digits=None,
+        style_2d: Optional[dict[str, Any]] = None,
+        style_3d: Optional[dict[str, Any]] = None,
     ):
         """
-        Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
-        and overlay the loops of the nodes active at filt_val.
-
-        Notes
-        -----
-        - GUDHI's AlphaComplex / SimplexTree work
-        Pass the same units here.
-        - Uses SimplexTree.get_filtration(), which is sorted by increasing filtration.
+        Plot the simplicial filtration at a fixed filtration value.
 
         Parameters
         ----------
@@ -1527,10 +1521,17 @@ class PersistenceForest:
             Filtration threshold.
         ax : matplotlib.axes.Axes or None
             Axes to draw on; if None, a new figure+axes are created.
+        signed : bool
+            Orientation policy for cycle chains in both 2D and 3D:
+            - False: cancel opposite-oriented duplicates.
+            - True: preserve orientation duplicates.
+        show_cycles : bool
+            If True, overlay the active cycles at the filtration value.
         show : bool
             If True, calls plt.show() when done.
-        fill_triangles : bool
-            If True, lightly fill triangles present at this filtration.
+        show_complex : bool | None
+            Whether to render complex geometry (edges/surfaces). If None,
+            defaults to True.
         figsize : tuple[float, float]
             Figure size used when ``ax`` is None.
         vertex_size : float
@@ -1539,146 +1540,43 @@ class PersistenceForest:
             Color scheme; builds the map on first use.
         title : str | None
             Title for the axes. Defaults to a filtration summary.
-        loop_edge_arrows : bool
-            If True, draw small arrows along each loop edge to indicate
-            the orientation of the cycle representatives.
-        remove_double_edges : bool
-            If True, cancel edges appearing with opposite orientations before
-            plotting.
-        show_cycles : bool
-            If True, overlay the active cycles at the filtration value.
+        style_2d : dict | None
+            Optional 2D style overrides. Supported keys include:
+            ``show_orientation_arrows``,
+            ``point_color``, ``point_alpha``, ``complex_face_color``,
+            ``complex_face_alpha``, ``complex_edge_color``,
+            ``complex_edge_width``, ``cycle_edge_width``,
+            ``arrow_linewidth``, ``arrow_scale``.
+        style_3d : dict | None
+            Optional 3D style overrides. Supported keys include:
+            ``camera_eye``, ``remove_axes``,
+            ``point_color``, ``point_alpha``, ``depthshade_points``,
+            ``complex_color``, ``complex_face_alpha``, ``cycle_face_alpha``,
+            ``complex_edge_color``, ``cycle_edge_color``,
+            ``complex_edge_width``, ``cycle_edge_width``,
+            ``complex_edge_alpha``, ``cycle_edge_alpha``,
+            ``antialiased``, ``zsort``, ``desaturate_complex``.
 
         Returns
         -------
         matplotlib.axes.Axes
         """
-        
-        if self.dim != 2:
-            if self.dim == 3:
-                raise ValueError("For 3d points clouds, use plot_at_filtration_plotly() or interactive_plot_filtration() methods. The method plot_at_filtration() is only implemented for dimension 2")
-            raise ValueError("plot_at_filtration() only implemented for dimension 2")
-
-        color_map = self._get_color_map(coloring=coloring)
-
-        # --- Prep
-        pts = np.asarray(self.point_cloud, dtype=float)
-        if pts.ndim != 2 or pts.shape[1] != 2:
-            raise ValueError("point_cloud must be an (n_points, 2) array-like.")
-
-        if ax is None:
-            _, ax = plt.subplots(figsize=figsize)
-
-        # --- Collect edges and triangles present at this filtration value
-        edges_xy = []      # list of [[x1,y1],[x2,y2]]
-        tris_xy = []       # list of [[x1,y1],[x2,y2],[x3,y3]]
-        for simplex, f in self.filtration:
-            if f > filt_val:
-                # Filtration is sorted non-decreasing → safe to stop here
-                break
-            if len(simplex) == 2:  # edge
-                i, j = simplex
-                edges_xy.append([pts[i], pts[j]])
-            elif len(simplex) == 3:  # triangle
-                i, j, k = simplex
-                tris_xy.append([pts[i], pts[j], pts[k]])
-
-        # --- Base scatter
-        ax.scatter(
-            pts[:, 0], 
-            pts[:, 1],
-            s=vertex_size, 
-            color="k", 
-            label="points",
-            marker="o",
-            edgecolors="none",
-            zorder=2.8
+        from .simplicial_filtration_plotting import _plot_at_filtration_generic
+        return _plot_at_filtration_generic(
+            self,
+            filt_val=filt_val,
+            ax=ax,
+            show=show,
+            show_complex=show_complex,
+            figsize=figsize,
+            vertex_size=vertex_size,
+            coloring=coloring,
+            title=title,
+            show_cycles=show_cycles,
+            signed=signed,
+            style_2d=style_2d,
+            style_3d=style_3d,
         )
-
-        # --- Draw triangles first (under edges)
-        if fill_triangles and tris_xy:
-            tri_coll = PolyCollection(
-                tris_xy, closed=True, edgecolors="none", facecolors="C0", alpha=0.2, zorder=1
-            )
-            ax.add_collection(tri_coll)
-
-        # --- Draw edges
-        if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=linewidth_filt, colors="0.3", zorder=2, label="edges")
-            ax.add_collection(edge_coll)
-
-        
-
-        # --- Overlay loops from active nodes at filt_val
-        if show_cycles:
-            for bar in self.barcode:
-                if filt_val>=bar.birth and filt_val<bar.death:
-
-                    cycle = bar.cycle_at_filtration_value(filt_val=filt_val)    
-
-                    # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-                    segments = self._chain_segments_2d(chain=cycle,signed=(not remove_double_edges))
-
-                    # Thicker colored edges along the loop
-                    loop_coll = LineCollection(segments, linewidths=linewidth_cycle, colors=[color_map[bar]], zorder=5)
-                    ax.add_collection(loop_coll)
-
-                    # Optional arrows to show loop edge orientation
-                    if show_orientation_arrows:
-                        for seg in segments:
-                            # seg is a 2x2 array: [start, end]
-                            (x0, y0), (x1, y1) = np.asarray(seg, dtype=float)
-
-                            dx = x1 - x0
-                            dy = y1 - y0
-                            length = float(np.hypot(dx, dy))
-                            if length == 0.0:
-                                continue  # skip degenerate segments
-
-                            # Place arrow around the middle of the segment, slightly shortened
-                            frac = 0.5  # fraction of the segment length used for the arrow body
-                            mx = 0.5 * (x0 + x1)
-                            my = 0.5 * (y0 + y1)
-
-                            # Direction unit vector
-                            ux = dx / length
-                            uy = dy / length
-
-                            half = 0.5 * frac * length
-                            x_start = mx - ux * half
-                            y_start = my - uy * half
-                            x_end   = mx + ux * half
-                            y_end   = my + uy * half
-
-                            ax.annotate(
-                                "",
-                                xy=(x_end, y_end),
-                                xytext=(x_start, y_start),
-                                arrowprops=dict(
-                                    arrowstyle="-|>",
-                                    linewidth=.2,
-                                    color=color_map[bar],
-                                    mutation_scale=6
-                                ),
-                                zorder=6,
-                        )
-
-        # --- Aesthetics
-        ax.set_aspect("equal", adjustable="box")
-        if title is None:
-            ax.set_title(fr"Filtration at radius r= {filt_val:.4g} ")
-        else:
-            ax.set_title(title)
-        #ax.set_xlabel("x")
-        #ax.set_ylabel("y")
-        # A simple legend (points + edges); loop colors are self-explanatory on top
-        #handles, labels = ax.get_legend_handles_labels()
-        #if handles:
-        #    ax.legend(loc="lower right", frameon=True)
-
-        ax.autoscale()  # fit collections
-        if show:
-            plt.show()
-        return ax
 
     def plot_at_filtration_with_dual( 
         self,
@@ -2499,14 +2397,14 @@ class PersistenceForest:
 
         return fig
 
-    def interactive_plot_filtration(
+    def plot_filtration_interactive(
         self,
         coloring: Literal["forest", "bars"] = "forest",
         show_cycles: bool = True,
         signed: bool = False,
         filt_max: Optional[float] = None,
         min_bar_length: float = 0.0,
-        show_complex: bool = False,
+        show_complex: bool = True,
         complex_opacity: float = 0.20,
         cycle_opacity: float = 0.55,
         resolution: int =100,
@@ -2557,7 +2455,7 @@ class PersistenceForest:
         """
         go = self._require_plotly()
         if self.dim not in (2, 3):
-            raise ValueError("interactive_plot_filtration is only implemented for dimensions 2 and 3.")
+            raise ValueError("plot_filtration_interactive is only implemented for dimensions 2 and 3.")
 
         if filt_max is None:
             filt_max = max( [bar.death for bar in self.barcode] )*1.03
@@ -2607,7 +2505,7 @@ class PersistenceForest:
                     vertex_size=vertex_size
                 )
             else:
-                raise ValueError("interactive_plot_filtration is only implemented for dimensions 2 and 3.")
+                raise ValueError("plot_filtration_interactive is only implemented for dimensions 2 and 3.")
 
             frames.append(go.Frame(name=f"{v:.12g}", data=frame_traces, traces=list(range(len(frame_traces))),))
 
@@ -2681,6 +2579,20 @@ class PersistenceForest:
 
         return fig
 
+    def interactive_plot_filtration(self, *args, **kwargs):
+        """
+        Deprecated alias for ``plot_filtration_interactive``.
+
+        For backward compatibility, forwards all arguments to
+        ``plot_filtration_interactive``.
+        """
+        warnings.warn(
+            "`interactive_plot_filtration` is deprecated; use `plot_filtration_interactive`.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.plot_filtration_interactive(*args, **kwargs)
+
     # ------ forest plotting tools ------------
 
     def plot_dendrogram(
@@ -2742,65 +2654,308 @@ class PersistenceForest:
     # --------- animation -------------
 
     def animate_filtration(
-            self,
-            filename: Optional[str] = None,
-            with_barcode: bool = False,
-            *args,
-            **kwargs
+        self,
+        filename: Optional[str] = None,
+        format: Optional[Literal["mp4", "html"]] = None,
+        with_barcode: bool = False,
+        fps: int = 20,
+        frames: int = 200,
+        t_min: Optional[float] = None,
+        t_max: Optional[float] = None,
+        coloring: Literal["forest", "bars"] = "forest",
+        signed: bool = False,
+        show_cycles: bool = True,
+        show_complex: bool = True,
+        dpi: int = 200,
+        figsize: Optional[tuple[float, float]] = None,
+        pixel_size: Optional[tuple[int, int]] = None,
+        panel_width_ratios: tuple[float, float] = (1.0, 1.0),
+        panel_spacing: float = 0.08,
+        figure_margins: Optional[dict[str, float]] = None,
+        filtration_kwargs: Optional[dict] = None,
+        barcode_kwargs: Optional[dict] = None,
+        camera_mode: Literal["fixed", "orbit"] = "fixed",
+        # Deprecated aliases (kept for backward compatibility)
+        cloud_figsize: Optional[tuple[float, float]] = None,
+        total_figsize: Optional[tuple[float, float]] = None,
+        plot_kwargs: Optional[dict] = None,
+        alpha_digits: Optional[int] = None,
     ):
         """
-        Create an animation of the loop forest over the filtration.
+        Animate the filtration with automatic 2D/3D backend dispatch.
+
+        Dispatch rules:
+        - 2D: uses the existing matplotlib animation pipeline.
+        - 3D + MP4: uses a matplotlib frame renderer and ffmpeg assembly.
+        - 3D + HTML: uses the existing Plotly interactive pipeline.
 
         Parameters
         ----------
-        filename : str | None, optional
-            If given, the animation is written to this path.
-        fps : int, optional
-            Frames per second for the saved animation.
-        frames : int, optional
-            Number of time steps (frames) sampled between t_min and t_max.
-        with_barcode : bool, optional
-            If True, show a second panel with the barcode and a moving vertical
-            line indicating the current filtration value.
-        t_min, t_max : float | None, optional
-            Optional lower/upper bounds on the filtration values to animate.
-        dpi : int, optional
-            DPI for saving the animation.
-        cloud_figsize : (float, float), optional
-            Size of the point-cloud panel when with_barcode=False.
-        total_figsize : (float, float) | None, optional
-            Total figure size when with_barcode=True. If None, a reasonable
-            default (10, 5) is used.
-        plot_kwargs : dict | None, optional
-            Extra keyword arguments forwarded to ``plot_at_filtration``.
-            For example::
-                plot_kwargs=dict(
-                    fill_triangles=True,
-                    loop_vertex_markers=False,
-                    point_size=3,
-                    coloring="forest",
-                )
-        barcode_kwargs : dict | None, optional
-            Extra keyword arguments forwarded to ``_plot_barcode`` **except**
-            ``ax`` and ``coloring``, which are managed by this method.
-            For example::
-                barcode_kwargs=dict(
-                    max_bars=150,
-                    min_bar_length=1e-3,
-                    sort="length",
-                    title="Barcode",
-                )
+        filename : str | None
+            Output path. If omitted, a default filename is chosen for exports.
+        format : {"mp4", "html"} | None
+            Output format. If None, inferred from ``filename``; defaults to
+            ``"mp4"`` when not inferable.
+        with_barcode : bool
+            If True, show a barcode panel with a moving filtration marker.
+        fps : int
+            Frames per second for MP4 output.
+        frames : int
+            Number of sampled filtration values.
+        t_min, t_max : float | None
+            Optional filtration interval.
+        coloring : {"forest", "bars"}
+            Color map used for cycle overlays and barcode.
+        signed : bool
+            If False, cancel opposite-oriented duplicate simplices first.
+        show_cycles : bool
+            Whether to display active cycle representatives.
+        show_complex : bool
+            Whether to render complex geometry.
+        dpi : int
+            DPI used for matplotlib frame rendering and video export.
+        figsize : tuple[float, float] | None
+            Matplotlib figure size in inches.
+            Defaults to (6, 6) without barcode and (10, 5) with barcode.
+        pixel_size : tuple[int, int] | None
+            Figure size in pixels. If provided, overrides ``figsize``.
+        panel_width_ratios : tuple[float, float]
+            Relative widths of cloud/barcode panels when ``with_barcode=True``.
+        panel_spacing : float
+            Horizontal spacing between cloud and barcode panels.
+        figure_margins : dict[str, float] | None
+            Outer figure margins with keys ``left``, ``right``, ``bottom``,
+            and ``top`` passed to ``subplots_adjust``.
+        filtration_kwargs : dict | None
+            Extra kwargs forwarded to ``plot_at_filtration`` (except ``ax``,
+            ``show`` and ``filt_val``). For rendering controls, use top-level
+            ``show_cycles``/``show_complex``; keep this dict for values like
+            ``vertex_size`` and 3D style values such as
+            ``style_3d={'camera_eye': ..., 'complex_face_alpha': ..., 'cycle_face_alpha': ...}``.
+        barcode_kwargs : dict | None
+            Extra kwargs forwarded to barcode plotting for matplotlib paths.
+        camera_mode : {"fixed", "orbit"}
+            3D camera mode.
+        alpha_digits : int | None
+            Number of digits shown in the filtration value overlay (matplotlib paths).
 
         Returns
         -------
-        anim : matplotlib.animation.FuncAnimation
-            The created animation. If ``filename`` is not None, the animation
-            is also saved to disk.
-        fig : matplotlib.figure.Figure
-            The figure on which the animation is drawn.
+        object
+            - 2D path: ``(anim, fig)`` from matplotlib.
+            - 3D MP4 path: output filename string.
+            - 3D HTML path: Plotly figure.
         """
+        from pathlib import Path
         from .forest_plotting import _animate_filtration_generic
-        return _animate_filtration_generic(self, with_barcode=with_barcode,filename=filename, *args, **kwargs)
+
+        out_format = format
+        if out_format is None and filename is not None:
+            suffix = Path(filename).suffix.lower()
+            if suffix in {".mp4", ".html"}:
+                out_format = suffix[1:]
+        if out_format is None:
+            out_format = "mp4"
+        if out_format not in {"mp4", "html"}:
+            raise ValueError(f"Unsupported animation format: {out_format!r}. Use 'mp4' or 'html'.")
+
+        if plot_kwargs is not None:
+            warnings.warn(
+                "`plot_kwargs` is deprecated; use `filtration_kwargs`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if filtration_kwargs is None:
+                filtration_kwargs = dict(plot_kwargs)
+            else:
+                merged = dict(plot_kwargs)
+                merged.update(filtration_kwargs)
+                filtration_kwargs = merged
+
+        if cloud_figsize is not None or total_figsize is not None:
+            warnings.warn(
+                "`cloud_figsize` and `total_figsize` are deprecated; use `figsize=(w, h)`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if figsize is None:
+                if with_barcode and total_figsize is not None:
+                    figsize = total_figsize
+                elif (not with_barcode) and cloud_figsize is not None:
+                    figsize = cloud_figsize
+
+        base_filtration_kwargs: dict[str, Any] = {}
+        if filtration_kwargs is not None:
+            base_filtration_kwargs.update(filtration_kwargs)
+    
+        style_2d = dict(base_filtration_kwargs.pop("style_2d", {}) or {})
+        style_3d = dict(base_filtration_kwargs.pop("style_3d", {}) or {})
+
+        if "fill_triangles" in base_filtration_kwargs:
+            base_filtration_kwargs.setdefault(
+                "show_complex",
+                bool(base_filtration_kwargs.pop("fill_triangles")),
+            )
+
+        if "remove_double_edges" in base_filtration_kwargs:
+            base_filtration_kwargs.setdefault(
+                "signed",
+                not bool(base_filtration_kwargs.pop("remove_double_edges")),
+            )
+
+        if "linewidth_filt" in base_filtration_kwargs:
+            style_2d.setdefault(
+                "complex_edge_width",
+                float(base_filtration_kwargs.pop("linewidth_filt")),
+            )
+        if "linewidth_cycle" in base_filtration_kwargs:
+            style_2d.setdefault(
+                "cycle_edge_width",
+                float(base_filtration_kwargs.pop("linewidth_cycle")),
+            )
+
+        if "show_orientation_arrows" in base_filtration_kwargs:
+            style_2d.setdefault(
+                "show_orientation_arrows",
+                bool(base_filtration_kwargs.pop("show_orientation_arrows")),
+            )
+
+        if "camera_eye" in base_filtration_kwargs:
+            style_3d.setdefault("camera_eye", base_filtration_kwargs.pop("camera_eye"))
+        if "remove_axes" in base_filtration_kwargs:
+            style_3d.setdefault(
+                "remove_axes",
+                bool(base_filtration_kwargs.pop("remove_axes")),
+            )
+
+        base_filtration_kwargs["signed"] = bool(signed)
+        base_filtration_kwargs["show_cycles"] = bool(show_cycles)
+        base_filtration_kwargs["show_complex"] = bool(show_complex)
+
+        if style_2d:
+            base_filtration_kwargs["style_2d"] = style_2d
+        if style_3d:
+            base_filtration_kwargs["style_3d"] = style_3d
+
+        if self.dim == 2:
+            if out_format == "html":
+                raise ValueError("HTML animation export is only implemented for ambient dimension 3.")
+
+            resolved_filename = filename
+            if resolved_filename is not None and Path(resolved_filename).suffix.lower() == "":
+                resolved_filename = f"{resolved_filename}.mp4"
+
+            filtration_panel_kwargs = dict(base_filtration_kwargs)
+            barcode_panel_kwargs = {}
+            if barcode_kwargs is not None:
+                barcode_panel_kwargs.update(barcode_kwargs)
+            t_max_2d = t_max
+            if t_max_2d is None:
+                finite_deaths = [float(bar.death) for bar in self.barcode if np.isfinite(float(bar.death))]
+                if finite_deaths:
+                    t_max_2d = max(finite_deaths)
+                else:
+                    finite_filtration = [float(f) for _, f in self.filtration if np.isfinite(float(f))]
+                    if finite_filtration:
+                        t_max_2d = max(finite_filtration)
+
+            return _animate_filtration_generic(
+                self,
+                filename=resolved_filename,
+                fps=fps,
+                frames=frames,
+                coloring=coloring,
+                with_barcode=with_barcode,
+                t_min=t_min,
+                t_max=t_max_2d,
+                dpi=dpi,
+                figsize=figsize,
+                pixel_size=pixel_size,
+                panel_width_ratios=panel_width_ratios,
+                panel_spacing=panel_spacing,
+                figure_margins=figure_margins,
+                filtration_kwargs=filtration_panel_kwargs,
+                barcode_kwargs=barcode_panel_kwargs,
+                alpha_digits=alpha_digits,
+            )
+
+        if self.dim == 3:
+            if out_format == "html":
+                html_width = None
+                html_height = None
+                if pixel_size is not None:
+                    if len(pixel_size) != 2:
+                        raise ValueError("pixel_size must be a 2-tuple (width, height).")
+                    html_width = int(pixel_size[0])
+                    html_height = int(pixel_size[1])
+                elif figsize is not None:
+                    html_width = int(round(float(figsize[0]) * float(dpi)))
+                    html_height = int(round(float(figsize[1]) * float(dpi)))
+
+                filtration_panel_kwargs = dict(base_filtration_kwargs)
+                style_3d = dict(filtration_panel_kwargs.get("style_3d", {}) or {})
+
+                fig = self.plot_filtration_interactive(
+                    coloring=coloring,
+                    show_cycles=filtration_panel_kwargs.get("show_cycles", True),
+                    signed=filtration_panel_kwargs["signed"],
+                    filt_max=t_max,
+                    show_complex=filtration_panel_kwargs.get("show_complex", True),
+                    complex_opacity=float(style_3d.get("complex_face_alpha", 0.20)),
+                    cycle_opacity=float(style_3d.get("cycle_face_alpha", 0.55)),
+                    resolution=frames,
+                    show=False,
+                    vertex_size=float(filtration_panel_kwargs.get("vertex_size", 3.0)),
+                    width=html_width,
+                    height=html_height,
+                )
+                resolved_filename = filename if filename is not None else "filtration_animation_3d.html"
+                if Path(resolved_filename).suffix.lower() == "":
+                    resolved_filename = f"{resolved_filename}.html"
+                fig.write_html(str(resolved_filename))
+                return fig
+
+            resolved_filename = filename if filename is not None else "filtration_animation_3d.mp4"
+            if Path(resolved_filename).suffix.lower() == "":
+                resolved_filename = f"{resolved_filename}.mp4"
+
+            filtration_panel_kwargs = {"camera_mode": camera_mode, **base_filtration_kwargs}
+
+            barcode_panel_kwargs = {}
+            if barcode_kwargs is not None:
+                barcode_panel_kwargs.update(barcode_kwargs)
+
+            t_max_3d = t_max
+            if t_max_3d is None:
+                finite_deaths = [float(bar.death) for bar in self.barcode if np.isfinite(float(bar.death))]
+                if finite_deaths:
+                    t_max_3d = max(finite_deaths)
+                else:
+                    finite_filtration = [float(f) for _, f in self.filtration if np.isfinite(float(f))]
+                    if finite_filtration:
+                        t_max_3d = max(finite_filtration)
+
+            return _animate_filtration_generic(
+                self,
+                filename=resolved_filename,
+                with_barcode=with_barcode,
+                fps=fps,
+                frames=frames,
+                t_min=t_min,
+                t_max=t_max_3d,
+                coloring=coloring,
+                dpi=dpi,
+                figsize=figsize,
+                pixel_size=pixel_size,
+                panel_width_ratios=panel_width_ratios,
+                panel_spacing=panel_spacing,
+                figure_margins=figure_margins,
+                filtration_kwargs=filtration_panel_kwargs,
+                barcode_kwargs=barcode_panel_kwargs,
+                alpha_digits=alpha_digits,
+            )
+
+        raise ValueError("animate_filtration is only implemented for ambient dimensions 2 and 3.")
 
     def animate_barcode_measurement(
                 self,
@@ -2837,7 +2992,7 @@ class PersistenceForest:
             :func:`forest_landscapes.animate_barcode_measurement_generic`.
             Typical keyword arguments include ``filename``, ``fps``,
             ``frames``, ``t_min``, ``t_max``, ``dpi``, ``total_figsize``,
-            ``plot_kwargs`` and ``measurement_kwargs``.
+            ``filtration_kwargs`` and ``measurement_kwargs``.
 
         Returns
         -------
@@ -2847,6 +3002,54 @@ class PersistenceForest:
             underlying figure.
         """
         from .forest_landscapes import animate_barcode_measurement_generic
+        from copy import deepcopy
+
+        kwargs = dict(kwargs)
+        if "plot_kwargs" in kwargs:
+            raise TypeError(
+                "`plot_kwargs` is no longer supported; use `filtration_kwargs`."
+            )
+        raw_filtration_kwargs = kwargs.get("filtration_kwargs", None)
+        if raw_filtration_kwargs is not None:
+            if not isinstance(raw_filtration_kwargs, dict):
+                raise TypeError("filtration_kwargs must be a dict when provided.")
+            filtration_kwargs = deepcopy(raw_filtration_kwargs)
+        else:
+            filtration_kwargs = {}
+
+        style_2d = dict(filtration_kwargs.pop("style_2d", {}) or {})
+        style_3d = dict(filtration_kwargs.pop("style_3d", {}) or {})
+
+        if "fill_triangles" in filtration_kwargs:
+            filtration_kwargs["show_complex"] = bool(filtration_kwargs.pop("fill_triangles"))
+
+        if "remove_double_edges" in filtration_kwargs:
+            filtration_kwargs["signed"] = not bool(filtration_kwargs.pop("remove_double_edges"))
+
+        if "linewidth_filt" in filtration_kwargs:
+            style_2d["complex_edge_width"] = float(filtration_kwargs.pop("linewidth_filt"))
+        if "linewidth_cycle" in filtration_kwargs:
+            style_2d["cycle_edge_width"] = float(filtration_kwargs.pop("linewidth_cycle"))
+
+        if "show_orientation_arrows" in filtration_kwargs:
+            style_2d["show_orientation_arrows"] = bool(
+                filtration_kwargs.pop("show_orientation_arrows")
+            )
+
+        if "camera_eye" in filtration_kwargs:
+            style_3d["camera_eye"] = filtration_kwargs.pop("camera_eye")
+        if "remove_axes" in filtration_kwargs:
+            style_3d["remove_axes"] = bool(filtration_kwargs.pop("remove_axes"))
+
+        # `alpha_digits` is not a `plot_at_filtration` kwarg in this animation path.
+        filtration_kwargs.pop("alpha_digits", None)
+
+        if style_2d:
+            filtration_kwargs["style_2d"] = style_2d
+        if style_3d:
+            filtration_kwargs["style_3d"] = style_3d
+
+        kwargs["filtration_kwargs"] = filtration_kwargs
 
         if signed:
             def _cycle_value(chain, point_cloud):
