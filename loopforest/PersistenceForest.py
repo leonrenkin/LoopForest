@@ -1504,7 +1504,7 @@ class PersistenceForest:
         signed: bool = False,
         show_cycles: bool = True,
         show: bool = True,
-        show_complex: Optional[bool] = None,
+        show_complex: bool = True,
         figsize: tuple[float, float] = (7, 7), 
         vertex_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
@@ -2663,25 +2663,21 @@ class PersistenceForest:
         t_min: Optional[float] = None,
         t_max: Optional[float] = None,
         coloring: Literal["forest", "bars"] = "forest",
-        show_cycles: bool = True,
         signed: bool = False,
+        show_cycles: bool = True,
         show_complex: bool = True,
-        complex_opacity: float = 0.20,
-        cycle_opacity: float = 0.55,
-        vertex_size: float = 3.0,
         dpi: int = 200,
         figsize: Optional[tuple[float, float]] = None,
         pixel_size: Optional[tuple[int, int]] = None,
-        panel_width_ratios: tuple[float, float] = (3.5, 2.0),
+        panel_width_ratios: tuple[float, float] = (1.0, 1.0),
+        panel_spacing: float = 0.08,
+        figure_margins: Optional[dict[str, float]] = None,
         filtration_kwargs: Optional[dict] = None,
         barcode_kwargs: Optional[dict] = None,
         camera_mode: Literal["fixed", "orbit"] = "fixed",
-        camera_eye=None,
         # Deprecated aliases (kept for backward compatibility)
         cloud_figsize: Optional[tuple[float, float]] = None,
         total_figsize: Optional[tuple[float, float]] = None,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
         plot_kwargs: Optional[dict] = None,
         alpha_digits: Optional[int] = None,
     ):
@@ -2710,18 +2706,12 @@ class PersistenceForest:
             Optional filtration interval.
         coloring : {"forest", "bars"}
             Color map used for cycle overlays and barcode.
-        show_cycles : bool
-            Whether to display active cycle representatives.
         signed : bool
             If False, cancel opposite-oriented duplicate simplices first.
+        show_cycles : bool
+            Whether to display active cycle representatives.
         show_complex : bool
-            For 3D only: whether to show complex geometry.
-        complex_opacity : float
-            Opacity of the 3D complex surface.
-        cycle_opacity : float
-            Opacity of the 3D cycle surfaces.
-        vertex_size : float
-            Marker size for point cloud vertices.
+            Whether to render complex geometry.
         dpi : int
             DPI used for matplotlib frame rendering and video export.
         figsize : tuple[float, float] | None
@@ -2731,15 +2721,21 @@ class PersistenceForest:
             Figure size in pixels. If provided, overrides ``figsize``.
         panel_width_ratios : tuple[float, float]
             Relative widths of cloud/barcode panels when ``with_barcode=True``.
+        panel_spacing : float
+            Horizontal spacing between cloud and barcode panels.
+        figure_margins : dict[str, float] | None
+            Outer figure margins with keys ``left``, ``right``, ``bottom``,
+            and ``top`` passed to ``subplots_adjust``.
         filtration_kwargs : dict | None
             Extra kwargs forwarded to ``plot_at_filtration`` (except ``ax``,
-            ``show`` and ``filt_val``).
+            ``show`` and ``filt_val``). For rendering controls, use top-level
+            ``show_cycles``/``show_complex``; keep this dict for values like
+            ``vertex_size`` and 3D style values such as
+            ``style_3d={'camera_eye': ..., 'complex_face_alpha': ..., 'cycle_face_alpha': ...}``.
         barcode_kwargs : dict | None
             Extra kwargs forwarded to barcode plotting for matplotlib paths.
         camera_mode : {"fixed", "orbit"}
             3D camera mode.
-        camera_eye :
-            3D camera specification (matplotlib ``(elev, azim)`` or dict).
         alpha_digits : int | None
             Number of digits shown in the filtration value overlay (matplotlib paths).
 
@@ -2776,17 +2772,6 @@ class PersistenceForest:
                 merged.update(filtration_kwargs)
                 filtration_kwargs = merged
 
-        if width is not None or height is not None:
-            if width is None or height is None:
-                raise ValueError("Deprecated width/height must be provided together.")
-            warnings.warn(
-                "`width` and `height` are deprecated; use `pixel_size=(width, height)`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            if pixel_size is None:
-                pixel_size = (int(width), int(height))
-
         if cloud_figsize is not None or total_figsize is not None:
             warnings.warn(
                 "`cloud_figsize` and `total_figsize` are deprecated; use `figsize=(w, h)`.",
@@ -2799,6 +2784,59 @@ class PersistenceForest:
                 elif (not with_barcode) and cloud_figsize is not None:
                     figsize = cloud_figsize
 
+        base_filtration_kwargs: dict[str, Any] = {}
+        if filtration_kwargs is not None:
+            base_filtration_kwargs.update(filtration_kwargs)
+    
+        style_2d = dict(base_filtration_kwargs.pop("style_2d", {}) or {})
+        style_3d = dict(base_filtration_kwargs.pop("style_3d", {}) or {})
+
+        if "fill_triangles" in base_filtration_kwargs:
+            base_filtration_kwargs.setdefault(
+                "show_complex",
+                bool(base_filtration_kwargs.pop("fill_triangles")),
+            )
+
+        if "remove_double_edges" in base_filtration_kwargs:
+            base_filtration_kwargs.setdefault(
+                "signed",
+                not bool(base_filtration_kwargs.pop("remove_double_edges")),
+            )
+
+        if "linewidth_filt" in base_filtration_kwargs:
+            style_2d.setdefault(
+                "complex_edge_width",
+                float(base_filtration_kwargs.pop("linewidth_filt")),
+            )
+        if "linewidth_cycle" in base_filtration_kwargs:
+            style_2d.setdefault(
+                "cycle_edge_width",
+                float(base_filtration_kwargs.pop("linewidth_cycle")),
+            )
+
+        if "show_orientation_arrows" in base_filtration_kwargs:
+            style_2d.setdefault(
+                "show_orientation_arrows",
+                bool(base_filtration_kwargs.pop("show_orientation_arrows")),
+            )
+
+        if "camera_eye" in base_filtration_kwargs:
+            style_3d.setdefault("camera_eye", base_filtration_kwargs.pop("camera_eye"))
+        if "remove_axes" in base_filtration_kwargs:
+            style_3d.setdefault(
+                "remove_axes",
+                bool(base_filtration_kwargs.pop("remove_axes")),
+            )
+
+        base_filtration_kwargs["signed"] = bool(signed)
+        base_filtration_kwargs["show_cycles"] = bool(show_cycles)
+        base_filtration_kwargs["show_complex"] = bool(show_complex)
+
+        if style_2d:
+            base_filtration_kwargs["style_2d"] = style_2d
+        if style_3d:
+            base_filtration_kwargs["style_3d"] = style_3d
+
         if self.dim == 2:
             if out_format == "html":
                 raise ValueError("HTML animation export is only implemented for ambient dimension 3.")
@@ -2807,15 +2845,7 @@ class PersistenceForest:
             if resolved_filename is not None and Path(resolved_filename).suffix.lower() == "":
                 resolved_filename = f"{resolved_filename}.mp4"
 
-            filtration_panel_kwargs = {
-                "show_complex": bool(show_complex),
-                "vertex_size": vertex_size,
-                "coloring": coloring,
-                "show_cycles": show_cycles,
-                "signed": signed,
-            }
-            if filtration_kwargs is not None:
-                filtration_panel_kwargs.update(filtration_kwargs)
+            filtration_panel_kwargs = dict(base_filtration_kwargs)
             barcode_panel_kwargs = {}
             if barcode_kwargs is not None:
                 barcode_panel_kwargs.update(barcode_kwargs)
@@ -2842,6 +2872,8 @@ class PersistenceForest:
                 figsize=figsize,
                 pixel_size=pixel_size,
                 panel_width_ratios=panel_width_ratios,
+                panel_spacing=panel_spacing,
+                figure_margins=figure_margins,
                 filtration_kwargs=filtration_panel_kwargs,
                 barcode_kwargs=barcode_panel_kwargs,
                 alpha_digits=alpha_digits,
@@ -2860,28 +2892,20 @@ class PersistenceForest:
                     html_width = int(round(float(figsize[0]) * float(dpi)))
                     html_height = int(round(float(figsize[1]) * float(dpi)))
 
-                filtration_panel_kwargs = {
-                    "coloring": coloring,
-                    "show_cycles": show_cycles,
-                    "signed": signed,
-                    "show_complex": show_complex,
-                    "complex_opacity": complex_opacity,
-                    "cycle_opacity": cycle_opacity,
-                    "vertex_size": vertex_size,
-                }
-                if filtration_kwargs is not None:
-                    filtration_panel_kwargs.update(filtration_kwargs)
+                filtration_panel_kwargs = dict(base_filtration_kwargs)
+                style_3d = dict(filtration_panel_kwargs.get("style_3d", {}) or {})
+
                 fig = self.plot_filtration_interactive(
-                    coloring=filtration_panel_kwargs["coloring"],
-                    show_cycles=filtration_panel_kwargs["show_cycles"],
+                    coloring=coloring,
+                    show_cycles=filtration_panel_kwargs.get("show_cycles", True),
                     signed=filtration_panel_kwargs["signed"],
                     filt_max=t_max,
-                    show_complex=filtration_panel_kwargs["show_complex"],
-                    complex_opacity=filtration_panel_kwargs["complex_opacity"],
-                    cycle_opacity=filtration_panel_kwargs["cycle_opacity"],
+                    show_complex=filtration_panel_kwargs.get("show_complex", True),
+                    complex_opacity=float(style_3d.get("complex_face_alpha", 0.20)),
+                    cycle_opacity=float(style_3d.get("cycle_face_alpha", 0.55)),
                     resolution=frames,
                     show=False,
-                    vertex_size=filtration_panel_kwargs["vertex_size"],
+                    vertex_size=float(filtration_panel_kwargs.get("vertex_size", 3.0)),
                     width=html_width,
                     height=html_height,
                 )
@@ -2895,21 +2919,7 @@ class PersistenceForest:
             if Path(resolved_filename).suffix.lower() == "":
                 resolved_filename = f"{resolved_filename}.mp4"
 
-            filtration_panel_kwargs = {
-                "show_complex": bool(show_complex),
-                "style_3d": {
-                    "complex_face_alpha": complex_opacity,
-                    "cycle_face_alpha": cycle_opacity,
-                    "camera_eye": camera_eye,
-                },
-                "vertex_size": vertex_size,
-                "coloring": coloring,
-                "show_cycles": show_cycles,
-                "signed": signed,
-                "camera_mode": camera_mode,
-            }
-            if filtration_kwargs is not None:
-                filtration_panel_kwargs.update(filtration_kwargs)
+            filtration_panel_kwargs = {"camera_mode": camera_mode, **base_filtration_kwargs}
 
             barcode_panel_kwargs = {}
             if barcode_kwargs is not None:
@@ -2938,6 +2948,8 @@ class PersistenceForest:
                 figsize=figsize,
                 pixel_size=pixel_size,
                 panel_width_ratios=panel_width_ratios,
+                panel_spacing=panel_spacing,
+                figure_margins=figure_margins,
                 filtration_kwargs=filtration_panel_kwargs,
                 barcode_kwargs=barcode_panel_kwargs,
                 alpha_digits=alpha_digits,

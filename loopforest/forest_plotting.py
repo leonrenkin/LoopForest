@@ -34,6 +34,7 @@ You are free to adapt the wrappers (defaults, docstrings, etc.) per class.
 """
 
 from typing import Any, Literal, Optional, Tuple
+from numbers import Real
 from pathlib import Path
 import shutil
 import subprocess
@@ -472,14 +473,14 @@ def _animate_filtration_generic(
         figsize: Optional[tuple[float, float]] = None,
         pixel_size: Optional[tuple[int, int]] = None,
         panel_width_ratios: tuple[float, float] = (3.5, 2.0),
+        panel_spacing: float = 0.08,
+        figure_margins: Optional[dict[str, float]] = None,
         filtration_kwargs: Optional[dict] = None,
         barcode_kwargs: Optional[dict] = None,
         # Deprecated aliases, kept for backward compatibility
         cloud_figsize: Optional[tuple[float, float]] = None,
         total_figsize: Optional[tuple[float, float]] = None,
         plot_kwargs: Optional[dict] = None,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
         alpha_digits: Optional[int] = None,
     ):
         """
@@ -514,12 +515,17 @@ def _animate_filtration_generic(
         panel_width_ratios : (float, float), optional
             Width ratios for cloud and barcode panels when
             ``with_barcode=True``.
+        panel_spacing : float, optional
+            Horizontal spacing between cloud and barcode panels (GridSpec
+            ``wspace``) when ``with_barcode=True``.
+        figure_margins : dict[str, float] | None, optional
+            Outer margins applied via ``fig.subplots_adjust`` with keys
+            ``{"left","right","bottom","top"}``.
         filtration_kwargs : dict | None, optional
             Extra keyword arguments forwarded to ``plot_at_filtration``.
             Example::
                 filtration_kwargs=dict(
-                    fill_triangles=True,
-                    loop_vertex_markers=False,
+                    show_complex=True,
                     vertex_size=3,
                     coloring="forest",
                 )
@@ -554,18 +560,11 @@ def _animate_filtration_generic(
             raise ValueError("panel_width_ratios must have exactly two entries.")
         if float(panel_width_ratios[0]) <= 0 or float(panel_width_ratios[1]) <= 0:
             raise ValueError("panel_width_ratios entries must be positive.")
-
-        if width is not None or height is not None:
-            if width is None or height is None:
-                raise ValueError("Deprecated width/height must be provided together.")
-            warnings.warn(
-                "`width` and `height` are deprecated in animate_filtration; "
-                "use `pixel_size=(width, height)`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            if pixel_size is None:
-                pixel_size = (int(width), int(height))
+        if not isinstance(panel_spacing, Real):
+            raise ValueError("panel_spacing must be a numeric value.")
+        panel_spacing = float(panel_spacing)
+        if panel_spacing < 0.0:
+            raise ValueError("panel_spacing must be non-negative.")
 
         if cloud_figsize is not None or total_figsize is not None:
             warnings.warn(
@@ -660,17 +659,31 @@ def _animate_filtration_generic(
             figsize=figsize,
             pixel_size=pixel_size,
         )
+        margins = _resolve_figure_margins(
+            with_barcode=with_barcode,
+            figure_margins=figure_margins,
+        )
         if with_barcode:
+            fig = plt.figure(figsize=rendered_figsize, constrained_layout=False)
             if is_3d:
-                fig = plt.figure(figsize=rendered_figsize, layout="constrained")
-                gs = fig.add_gridspec(1, 2, width_ratios=panel_width_ratios)
+                gs = fig.add_gridspec(
+                    1,
+                    2,
+                    width_ratios=panel_width_ratios,
+                    wspace=panel_spacing,
+                )
                 ax_cloud = fig.add_subplot(gs[0, 0], projection="3d")
                 ax_bar = fig.add_subplot(gs[0, 1])
             else:
-                fig = plt.figure(figsize=rendered_figsize, layout="constrained")
-                gs = fig.add_gridspec(1, 2, width_ratios=panel_width_ratios)
+                gs = fig.add_gridspec(
+                    1,
+                    2,
+                    width_ratios=panel_width_ratios,
+                    wspace=panel_spacing,
+                )
                 ax_cloud = fig.add_subplot(gs[0, 0])
                 ax_bar = fig.add_subplot(gs[0, 1])
+            fig.subplots_adjust(**margins)
 
             # Draw the (static) barcode once
             if not getattr(forest, "barcode", None):
@@ -711,10 +724,12 @@ def _animate_filtration_generic(
             barcode_line = ax_bar.axvline(current_t0, color="k", linewidth=2)
         else:
             if is_3d:
-                fig = plt.figure(figsize=rendered_figsize)
+                fig = plt.figure(figsize=rendered_figsize, constrained_layout=False)
                 ax_cloud = fig.add_subplot(111, projection="3d")
             else:
-                fig, ax_cloud = plt.subplots(figsize=rendered_figsize)
+                fig = plt.figure(figsize=rendered_figsize, constrained_layout=False)
+                ax_cloud = fig.add_subplot(111)
+            fig.subplots_adjust(**margins)
             ax_bar = None
             barcode_line = None
 
@@ -797,7 +812,7 @@ def _animate_filtration_generic(
             ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
 
             savefig_kwargs = {
-                "pad_inches": 0.02,  
+                "pad_inches": 0.0,  
                 "facecolor": fig.get_facecolor(),
             }
 
@@ -924,6 +939,46 @@ def _resolve_matplotlib_figsize(
     px_w = _even(max(2, int(round(base_w * float(dpi)))))
     px_h = _even(max(2, int(round(base_h * float(dpi)))))
     return (px_w / float(dpi), px_h / float(dpi)), (px_w, px_h)
+
+
+def _resolve_figure_margins(
+    *,
+    with_barcode: bool,
+    figure_margins: Optional[dict[str, float]] = None,
+) -> dict[str, float]:
+    """
+    Resolve validated matplotlib subplot margins.
+    """
+    if figure_margins is None:
+        if with_barcode:
+            return {"left": 0.06, "right": 0.985, "bottom": 0.10, "top": 0.90}
+        return {"left": 0.08, "right": 0.98, "bottom": 0.10, "top": 0.92}
+
+    if not isinstance(figure_margins, dict):
+        raise ValueError(
+            "figure_margins must be a dict with keys {'left','right','bottom','top'}."
+        )
+    required_keys = {"left", "right", "bottom", "top"}
+    provided_keys = set(figure_margins.keys())
+    if provided_keys != required_keys:
+        raise ValueError(
+            "figure_margins must contain exactly the keys "
+            "{'left','right','bottom','top'}."
+        )
+
+    margins: dict[str, float] = {}
+    for key in ("left", "right", "bottom", "top"):
+        value = figure_margins[key]
+        if not isinstance(value, Real):
+            raise ValueError(f"figure_margins['{key}'] must be numeric.")
+        margins[key] = float(value)
+
+    if not (0.0 <= margins["left"] < margins["right"] <= 1.0):
+        raise ValueError("figure_margins must satisfy 0 <= left < right <= 1.")
+    if not (0.0 <= margins["bottom"] < margins["top"] <= 1.0):
+        raise ValueError("figure_margins must satisfy 0 <= bottom < top <= 1.")
+
+    return margins
 
 
 def _parse_camera_eye(camera_eye: Optional[Any]) -> tuple[float, float]:

@@ -96,7 +96,7 @@ def _plot_at_filtration_generic(
     filt_val: float,
     ax=None,
     show: bool = True,
-    show_complex: Optional[bool] = None,
+    show_complex: bool = True,
     figsize: tuple[float, float] = (7, 7),
     vertex_size: float = 3,
     coloring: Literal["forest", "bars"] = "forest",
@@ -112,8 +112,6 @@ def _plot_at_filtration_generic(
     Dispatches to a 2D or 3D renderer based on `forest.dim`.
     """
     if forest.dim == 2:
-        if show_complex is None:
-            show_complex = True
         return _plot_at_filtration_2d(
             forest=forest,
             filt_val=filt_val,
@@ -129,8 +127,6 @@ def _plot_at_filtration_generic(
             style_2d=style_2d,
         )
     if forest.dim == 3:
-        if show_complex is None:
-            show_complex = True
         return _plot_at_filtration_3d(
             forest=forest,
             filt_val=filt_val,
