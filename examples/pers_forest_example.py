@@ -103,7 +103,7 @@ from loopforest.cycle_rep_vectorisations import signed_chain_excess_connected_co
 double_edge_cloud = np.loadtxt("../point_cloud_csvs/signed_chain_example.csv",  delimiter=",", skiprows=1) * 100
 double_edge_forest = PersistenceForest( point_cloud=double_edge_cloud )
 
-double_edge_forest.plot_at_filtration(15,show_orientation_arrows=True, figsize=(5,5))
+double_edge_forest.plot_at_filtration(15,style_2d={"show_orientation_arrows": True})
 
 
 # %%

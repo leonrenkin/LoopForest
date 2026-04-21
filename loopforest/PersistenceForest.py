@@ -1501,23 +1501,16 @@ class PersistenceForest:
         self,
         filt_val: float,
         ax=None,
+        signed: bool = False,
+        show_cycles: bool = True,
         show: bool = True,
-        fill_triangles: bool = True,
+        show_complex: Optional[bool] = None,
         figsize: tuple[float, float] = (7, 7), 
         vertex_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
-        show_orientation_arrows: bool = False,
-        remove_double_edges: bool = False,
-        show_cycles: bool = True,
-        linewidth_filt: float = 0.6,
-        linewidth_cycle: float = 1.8,
-        alpha_digits=None,
-        show_complex: Optional[bool] = None,
-        complex_opacity: float = 0.20,
-        cycle_opacity: float = 0.55,
-        signed: Optional[bool] = None,
-        camera_eye=None,
+        style_2d: Optional[dict[str, Any]] = None,
+        style_3d: Optional[dict[str, Any]] = None,
     ):
         """
         Plot the simplicial filtration at a fixed filtration value.
@@ -1528,11 +1521,17 @@ class PersistenceForest:
             Filtration threshold.
         ax : matplotlib.axes.Axes or None
             Axes to draw on; if None, a new figure+axes are created.
+        signed : bool
+            Orientation policy for cycle chains in both 2D and 3D:
+            - False: cancel opposite-oriented duplicates.
+            - True: preserve orientation duplicates.
+        show_cycles : bool
+            If True, overlay the active cycles at the filtration value.
         show : bool
             If True, calls plt.show() when done.
-        fill_triangles : bool
-            In 2D: lightly fill present triangles.
-            In 3D: used as fallback for ``show_complex`` when that is None.
+        show_complex : bool | None
+            Whether to render complex geometry (edges/surfaces). If None,
+            defaults to True.
         figsize : tuple[float, float]
             Figure size used when ``ax`` is None.
         vertex_size : float
@@ -1541,27 +1540,22 @@ class PersistenceForest:
             Color scheme; builds the map on first use.
         title : str | None
             Title for the axes. Defaults to a filtration summary.
-        loop_edge_arrows : bool
-            If True, draw small arrows along each loop edge to indicate
-            the orientation of the cycle representatives.
-        remove_double_edges : bool
-            In 2D: cancel opposite-oriented duplicate edges before plotting.
-            In 3D: used as fallback to determine ``signed`` when ``signed`` is None.
-        show_cycles : bool
-            If True, overlay the active cycles at the filtration value.
-        show_complex : bool | None
-            For 3D plots, show complex boundary geometry. If None, uses
-            ``fill_triangles``.
-        complex_opacity : float
-            For 3D plots, opacity of complex boundary surfaces.
-        cycle_opacity : float
-            For 3D plots, opacity of cycle surfaces.
-        signed : bool | None
-            For 3D plots, whether to preserve orientation duplicates in chains.
-            If None, defaults to ``not remove_double_edges``.
-        camera_eye : Any
-            For 3D plots, camera specification as ``(elev, azim)`` or
-            ``{"elev": ..., "azim": ...}``.
+        style_2d : dict | None
+            Optional 2D style overrides. Supported keys include:
+            ``show_orientation_arrows``,
+            ``point_color``, ``point_alpha``, ``complex_face_color``,
+            ``complex_face_alpha``, ``complex_edge_color``,
+            ``complex_edge_width``, ``cycle_edge_width``,
+            ``arrow_linewidth``, ``arrow_scale``.
+        style_3d : dict | None
+            Optional 3D style overrides. Supported keys include:
+            ``camera_eye``, ``remove_axes``,
+            ``point_color``, ``point_alpha``, ``depthshade_points``,
+            ``complex_color``, ``complex_face_alpha``, ``cycle_face_alpha``,
+            ``complex_edge_color``, ``cycle_edge_color``,
+            ``complex_edge_width``, ``cycle_edge_width``,
+            ``complex_edge_alpha``, ``cycle_edge_alpha``,
+            ``antialiased``, ``zsort``, ``desaturate_complex``.
 
         Returns
         -------
@@ -1573,22 +1567,15 @@ class PersistenceForest:
             filt_val=filt_val,
             ax=ax,
             show=show,
-            fill_triangles=fill_triangles,
+            show_complex=show_complex,
             figsize=figsize,
             vertex_size=vertex_size,
             coloring=coloring,
             title=title,
-            show_orientation_arrows=show_orientation_arrows,
-            remove_double_edges=remove_double_edges,
             show_cycles=show_cycles,
-            linewidth_filt=linewidth_filt,
-            linewidth_cycle=linewidth_cycle,
-            alpha_digits=alpha_digits,
-            show_complex=show_complex,
-            complex_opacity=complex_opacity,
-            cycle_opacity=cycle_opacity,
             signed=signed,
-            camera_eye=camera_eye,
+            style_2d=style_2d,
+            style_3d=style_3d,
         )
 
     def plot_at_filtration_with_dual( 
@@ -2821,11 +2808,11 @@ class PersistenceForest:
                 resolved_filename = f"{resolved_filename}.mp4"
 
             filtration_panel_kwargs = {
-                "fill_triangles": bool(show_complex),
+                "show_complex": bool(show_complex),
                 "vertex_size": vertex_size,
                 "coloring": coloring,
                 "show_cycles": show_cycles,
-                "remove_double_edges": (not signed),
+                "signed": signed,
             }
             if filtration_kwargs is not None:
                 filtration_panel_kwargs.update(filtration_kwargs)
@@ -2909,17 +2896,17 @@ class PersistenceForest:
                 resolved_filename = f"{resolved_filename}.mp4"
 
             filtration_panel_kwargs = {
-                "fill_triangles": bool(show_complex),
                 "show_complex": bool(show_complex),
-                "complex_opacity": complex_opacity,
-                "cycle_opacity": cycle_opacity,
+                "style_3d": {
+                    "complex_face_alpha": complex_opacity,
+                    "cycle_face_alpha": cycle_opacity,
+                    "camera_eye": camera_eye,
+                },
                 "vertex_size": vertex_size,
                 "coloring": coloring,
                 "show_cycles": show_cycles,
                 "signed": signed,
-                "remove_double_edges": (not signed),
                 "camera_mode": camera_mode,
-                "camera_eye": camera_eye,
             }
             if filtration_kwargs is not None:
                 filtration_panel_kwargs.update(filtration_kwargs)
@@ -2993,7 +2980,7 @@ class PersistenceForest:
             :func:`forest_landscapes.animate_barcode_measurement_generic`.
             Typical keyword arguments include ``filename``, ``fps``,
             ``frames``, ``t_min``, ``t_max``, ``dpi``, ``total_figsize``,
-            ``plot_kwargs`` and ``measurement_kwargs``.
+            ``filtration_kwargs`` and ``measurement_kwargs``.
 
         Returns
         -------
@@ -3003,6 +2990,54 @@ class PersistenceForest:
             underlying figure.
         """
         from .forest_landscapes import animate_barcode_measurement_generic
+        from copy import deepcopy
+
+        kwargs = dict(kwargs)
+        if "plot_kwargs" in kwargs:
+            raise TypeError(
+                "`plot_kwargs` is no longer supported; use `filtration_kwargs`."
+            )
+        raw_filtration_kwargs = kwargs.get("filtration_kwargs", None)
+        if raw_filtration_kwargs is not None:
+            if not isinstance(raw_filtration_kwargs, dict):
+                raise TypeError("filtration_kwargs must be a dict when provided.")
+            filtration_kwargs = deepcopy(raw_filtration_kwargs)
+        else:
+            filtration_kwargs = {}
+
+        style_2d = dict(filtration_kwargs.pop("style_2d", {}) or {})
+        style_3d = dict(filtration_kwargs.pop("style_3d", {}) or {})
+
+        if "fill_triangles" in filtration_kwargs:
+            filtration_kwargs["show_complex"] = bool(filtration_kwargs.pop("fill_triangles"))
+
+        if "remove_double_edges" in filtration_kwargs:
+            filtration_kwargs["signed"] = not bool(filtration_kwargs.pop("remove_double_edges"))
+
+        if "linewidth_filt" in filtration_kwargs:
+            style_2d["complex_edge_width"] = float(filtration_kwargs.pop("linewidth_filt"))
+        if "linewidth_cycle" in filtration_kwargs:
+            style_2d["cycle_edge_width"] = float(filtration_kwargs.pop("linewidth_cycle"))
+
+        if "show_orientation_arrows" in filtration_kwargs:
+            style_2d["show_orientation_arrows"] = bool(
+                filtration_kwargs.pop("show_orientation_arrows")
+            )
+
+        if "camera_eye" in filtration_kwargs:
+            style_3d["camera_eye"] = filtration_kwargs.pop("camera_eye")
+        if "remove_axes" in filtration_kwargs:
+            style_3d["remove_axes"] = bool(filtration_kwargs.pop("remove_axes"))
+
+        # `alpha_digits` is not a `plot_at_filtration` kwarg in this animation path.
+        filtration_kwargs.pop("alpha_digits", None)
+
+        if style_2d:
+            filtration_kwargs["style_2d"] = style_2d
+        if style_3d:
+            filtration_kwargs["style_3d"] = style_3d
+
+        kwargs["filtration_kwargs"] = filtration_kwargs
 
         if signed:
             def _cycle_value(chain, point_cloud):

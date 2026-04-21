@@ -646,10 +646,9 @@ def _animate_filtration_generic(
             }
         else:
             filtration_kwargs = {
-                "fill_triangles": True,
                 "vertex_size": 3,
                 "coloring": coloring,
-                "show": False,  
+                "show": False,
                 **filtration_kwargs,
             }
         filtration_kwargs["show"] = False
@@ -727,7 +726,8 @@ def _animate_filtration_generic(
             if is_3d:
                 local_plot_kwargs = dict(filtration_kwargs)
                 camera_mode = local_plot_kwargs.pop("camera_mode", "fixed")
-                camera_eye = local_plot_kwargs.get("camera_eye", None)
+                style_3d = dict(local_plot_kwargs.get("style_3d", {}) or {})
+                camera_eye = style_3d.get("camera_eye", None)
                 if camera_mode not in {"fixed", "orbit"}:
                     raise ValueError("camera_mode must be 'fixed' or 'orbit'.")
                 if camera_mode == "orbit":
@@ -740,10 +740,11 @@ def _animate_filtration_generic(
                         base_elev = float(camera_eye[0])
                         base_azim = float(camera_eye[1])
                     denom = max(1, len(frame_times) - 1)
-                    local_plot_kwargs["camera_eye"] = (
+                    style_3d["camera_eye"] = (
                         base_elev,
                         base_azim + 360.0 * float(frame_idx) / float(denom),
                     )
+                    local_plot_kwargs["style_3d"] = style_3d
             # Delegate the heavy lifting to the existing helper
             forest.plot_at_filtration(filt_val=t, ax=ax_cloud, **local_plot_kwargs)
 

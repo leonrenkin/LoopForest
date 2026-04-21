@@ -32,27 +32,79 @@ def _camera_from_eye(camera_eye: Optional[Any]) -> tuple[float, float]:
     )
 
 
+def _desaturate_color(color: Any, amount: float) -> tuple[float, float, float]:
+    """
+    Return an RGB color with saturation reduced by `amount` in [0, 1].
+    """
+    from matplotlib import colors as mcolors
+
+    rgb = np.asarray(mcolors.to_rgb(color), dtype=float)
+    amount = float(np.clip(amount, 0.0, 1.0))
+    if amount <= 0.0:
+        return (float(rgb[0]), float(rgb[1]), float(rgb[2]))
+    hsv = mcolors.rgb_to_hsv(rgb)
+    hsv[1] *= 1.0 - amount
+    out = mcolors.hsv_to_rgb(hsv)
+    return (float(out[0]), float(out[1]), float(out[2]))
+
+
+def _resolve_style_2d(style_2d: Optional[dict[str, Any]]) -> dict[str, Any]:
+    style = {
+        "point_color": "k",
+        "point_alpha": 1.0,
+        "complex_face_color": "C0",
+        "complex_face_alpha": 0.2,
+        "complex_edge_color": "0.3",
+        "complex_edge_width": 0.6,
+        "cycle_edge_width": 1.8,
+        "show_orientation_arrows": False,
+        "arrow_linewidth": 0.8,
+        "arrow_scale": 12.0,
+    }
+    if style_2d:
+        style.update(style_2d)
+    return style
+
+
+def _resolve_style_3d(style_3d: Optional[dict[str, Any]]) -> dict[str, Any]:
+    style = {
+        "camera_eye": None,
+        "remove_axes": False,
+        "point_color": "black",
+        "point_alpha": 1.0,
+        "depthshade_points": False,
+        "complex_color": "#add8e6",
+        "complex_face_alpha": 0.20,
+        "cycle_face_alpha": 0.55,
+        "complex_edge_color": "0.35",
+        "cycle_edge_color": None,
+        "complex_edge_width": 0.6,
+        "cycle_edge_width": 0.2,
+        "complex_edge_alpha": None,
+        "cycle_edge_alpha": None,
+        "antialiased": True,
+        "zsort": "average",
+        "desaturate_complex": 0.0,
+    }
+    if style_3d:
+        style.update(style_3d)
+    return style
+
+
 def _plot_at_filtration_generic(
     forest,
     filt_val: float,
     ax=None,
     show: bool = True,
-    fill_triangles: bool = True,
+    show_complex: Optional[bool] = None,
     figsize: tuple[float, float] = (7, 7),
     vertex_size: float = 3,
     coloring: Literal["forest", "bars"] = "forest",
     title: Optional[str] = None,
-    show_orientation_arrows: bool = False,
-    remove_double_edges: bool = False,
     show_cycles: bool = True,
-    linewidth_filt: float = 0.6,
-    linewidth_cycle: float = 1.8,
-    alpha_digits=None,
-    show_complex: Optional[bool] = None,
-    complex_opacity: float = 0.20,
-    cycle_opacity: float = 0.55,
-    signed: Optional[bool] = None,
-    camera_eye: Optional[Any] = None,
+    signed: bool = False,
+    style_2d: Optional[dict[str, Any]] = None,
+    style_3d: Optional[dict[str, Any]] = None,
 ):
     """
     Plot simplicial filtration at a fixed filtration value.
@@ -60,28 +112,25 @@ def _plot_at_filtration_generic(
     Dispatches to a 2D or 3D renderer based on `forest.dim`.
     """
     if forest.dim == 2:
+        if show_complex is None:
+            show_complex = True
         return _plot_at_filtration_2d(
             forest=forest,
             filt_val=filt_val,
             ax=ax,
             show=show,
-            fill_triangles=fill_triangles,
+            show_complex=show_complex,
             figsize=figsize,
             vertex_size=vertex_size,
             coloring=coloring,
             title=title,
-            show_orientation_arrows=show_orientation_arrows,
-            remove_double_edges=remove_double_edges,
             show_cycles=show_cycles,
-            linewidth_filt=linewidth_filt,
-            linewidth_cycle=linewidth_cycle,
-            alpha_digits=alpha_digits,
+            signed=signed,
+            style_2d=style_2d,
         )
     if forest.dim == 3:
         if show_complex is None:
-            show_complex = fill_triangles
-        if signed is None:
-            signed = not remove_double_edges
+            show_complex = True
         return _plot_at_filtration_3d(
             forest=forest,
             filt_val=filt_val,
@@ -91,15 +140,11 @@ def _plot_at_filtration_generic(
             show_cycles=show_cycles,
             signed=signed,
             min_bar_length=0.0,
-            complex_opacity=complex_opacity,
-            cycle_opacity=cycle_opacity,
             figsize=figsize,
             vertex_size=vertex_size,
             coloring=coloring,
             title=title,
-            linewidth_filt=linewidth_filt,
-            linewidth_cycle=linewidth_cycle,
-            camera_eye=camera_eye,
+            style_3d=style_3d,
         )
 
     raise ValueError("plot_at_filtration is only implemented for ambient dimensions 2 and 3.")
@@ -110,22 +155,20 @@ def _plot_at_filtration_2d(
     filt_val: float,
     ax=None,
     show: bool = True,
-    fill_triangles: bool = True,
+    show_complex: bool = True,
     figsize: tuple[float, float] = (7, 7),
     vertex_size: float = 3,
     coloring: Literal["forest", "bars"] = "forest",
     title: Optional[str] = None,
-    show_orientation_arrows: bool = False,
-    remove_double_edges: bool = False,
     show_cycles: bool = True,
-    linewidth_filt: float = 0.6,
-    linewidth_cycle: float = 1.8,
-    alpha_digits=None,
+    signed: bool = False,
+    style_2d: Optional[dict[str, Any]] = None,
 ):
     """
     Plot 2D filtration; behavior is kept compatible with prior implementation.
     """
     color_map = forest._get_color_map(coloring=coloring)
+    style = _resolve_style_2d(style_2d)
 
     pts = np.asarray(forest.point_cloud, dtype=float)
     if pts.ndim != 2 or pts.shape[1] != 2:
@@ -150,29 +193,30 @@ def _plot_at_filtration_2d(
         pts[:, 0],
         pts[:, 1],
         s=vertex_size,
-        color="k",
+        color=style["point_color"],
+        alpha=float(style["point_alpha"]),
         label="points",
         marker="o",
         edgecolors="none",
         zorder=2.8,
     )
 
-    if fill_triangles and tris_xy:
+    if show_complex and tris_xy:
         tri_coll = PolyCollection(
             tris_xy,
             closed=True,
             edgecolors="none",
-            facecolors="C0",
-            alpha=0.2,
+            facecolors=style["complex_face_color"],
+            alpha=float(style["complex_face_alpha"]),
             zorder=1,
         )
         ax.add_collection(tri_coll)
 
-    if edges_xy:
+    if show_complex and edges_xy:
         edge_coll = LineCollection(
             edges_xy,
-            linewidths=linewidth_filt,
-            colors="0.3",
+            linewidths=float(style["complex_edge_width"]),
+            colors=style["complex_edge_color"],
             zorder=2,
             label="edges",
         )
@@ -184,18 +228,18 @@ def _plot_at_filtration_2d(
                 cycle = bar.cycle_at_filtration_value(filt_val=filt_val)
                 segments = forest._chain_segments_2d(
                     chain=cycle,
-                    signed=(not remove_double_edges),
+                    signed=signed,
                 )
 
                 loop_coll = LineCollection(
                     segments,
-                    linewidths=linewidth_cycle,
+                    linewidths=float(style["cycle_edge_width"]),
                     colors=[color_map[bar]],
                     zorder=5,
                 )
                 ax.add_collection(loop_coll)
 
-                if show_orientation_arrows:
+                if bool(style["show_orientation_arrows"]):
                     for seg in segments:
                         (x0, y0), (x1, y1) = np.asarray(seg, dtype=float)
                         dx = x1 - x0
@@ -222,9 +266,9 @@ def _plot_at_filtration_2d(
                             xytext=(x_start, y_start),
                             arrowprops=dict(
                                 arrowstyle="-|>",
-                                linewidth=0.2,
+                                linewidth=float(style["arrow_linewidth"]),
                                 color=color_map[bar],
-                                mutation_scale=6,
+                                mutation_scale=float(style["arrow_scale"]),
                             ),
                             zorder=6,
                         )
@@ -250,20 +294,25 @@ def _plot_at_filtration_3d(
     show_cycles: bool = True,
     signed: bool = False,
     min_bar_length: float = 0.0,
-    complex_opacity: float = 0.20,
-    cycle_opacity: float = 0.55,
     figsize: tuple[float, float] = (7, 7),
     vertex_size: float = 3.0,
     coloring: Literal["forest", "bars"] = "forest",
     title: Optional[str] = None,
-    linewidth_filt: float = 0.6,
-    linewidth_cycle: float = 0.2,
-    camera_eye: Optional[Any] = None,
+    style_3d: Optional[dict[str, Any]] = None,
 ):
     """
     Plot 3D filtration snapshot with optional complex boundary and cycle surfaces.
     """
     color_map = forest._get_color_map(coloring=coloring)
+    style = _resolve_style_3d(style_3d)
+    complex_face_alpha = float(style["complex_face_alpha"])
+    cycle_face_alpha = float(style["cycle_face_alpha"])
+    complex_edge_alpha = style["complex_edge_alpha"]
+    if complex_edge_alpha is None:
+        complex_edge_alpha = max(0.2, complex_face_alpha)
+    cycle_edge_alpha = style["cycle_edge_alpha"]
+    if cycle_edge_alpha is None:
+        cycle_edge_alpha = min(1.0, cycle_face_alpha + 0.25)
     snapshot = forest._complex_snapshot_at_filtration(filt_val=float(filt_val))
     pts = np.asarray(snapshot["points"], dtype=float)
     if pts.ndim != 2 or pts.shape[1] != 3:
@@ -283,19 +332,23 @@ def _plot_at_filtration_3d(
             segments = [pts[list(edge)] for edge in edges]
             edge_coll = Line3DCollection(
                 segments,
-                colors="0.35",
-                linewidths=linewidth_filt,
-                alpha=max(0.2, float(complex_opacity)),
+                colors=style["complex_edge_color"],
+                linewidths=float(style["complex_edge_width"]),
+                alpha=float(complex_edge_alpha),
+                antialiased=bool(style["antialiased"]),
             )
             ax.add_collection3d(edge_coll)
 
         triangles = snapshot.get("triangles", [])
         if triangles:
             tri_polys = [pts[list(tri)] for tri in triangles]
+            complex_rgb = _desaturate_color(style["complex_color"], float(style["desaturate_complex"]))
             tri_coll = Poly3DCollection(
                 tri_polys,
-                facecolors=(0.678, 0.847, 0.902, float(complex_opacity)),  # lightblue RGBA
+                facecolors=(*complex_rgb, complex_face_alpha),
                 edgecolors="none",
+                antialiased=bool(style["antialiased"]),
+                zsort=style["zsort"],
             )
             ax.add_collection3d(tri_coll)
 
@@ -304,8 +357,9 @@ def _plot_at_filtration_3d(
         pts[:, 1],
         pts[:, 2],
         s=vertex_size,
-        c="black",
-        depthshade=False,
+        c=style["point_color"],
+        alpha=float(style["point_alpha"]),
+        depthshade=bool(style["depthshade_points"]),
     )
 
     if show_cycles:
@@ -322,11 +376,16 @@ def _plot_at_filtration_3d(
                 continue
             cycle_polys = [pts[list(face)] for face in tri_faces]
             color = color_map.get(bar, "#d62728")
+            cycle_edge_color_eff = (
+                color if style["cycle_edge_color"] is None else style["cycle_edge_color"]
+            )
             cycle_coll = Poly3DCollection(
                 cycle_polys,
-                facecolors=mcolors.to_rgba(color, alpha=cycle_opacity),
-                edgecolors=mcolors.to_rgba(color, alpha=min(1.0, cycle_opacity + 0.25)),
-                linewidths=linewidth_cycle,
+                facecolors=mcolors.to_rgba(color, alpha=cycle_face_alpha),
+                edgecolors=mcolors.to_rgba(cycle_edge_color_eff, alpha=float(cycle_edge_alpha)),
+                linewidths=float(style["cycle_edge_width"]),
+                antialiased=bool(style["antialiased"]),
+                zsort=style["zsort"],
             )
             ax.add_collection3d(cycle_coll)
 
@@ -342,11 +401,25 @@ def _plot_at_filtration_3d(
     ax.set_zlim(*zlim)
     ax.set_box_aspect((xlim[1] - xlim[0], ylim[1] - ylim[0], zlim[1] - zlim[0]))
 
-    elev, azim = _camera_from_eye(camera_eye=camera_eye)
+    elev, azim = _camera_from_eye(camera_eye=style["camera_eye"])
     ax.view_init(elev=elev, azim=azim)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
+    if bool(style["remove_axes"]):
+        ax.grid(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            axis.pane.fill = False
+            axis.pane.set_facecolor((1.0, 1.0, 1.0, 0.0))
+            axis.pane.set_edgecolor((1.0, 1.0, 1.0, 0.0))
+            axis.line.set_color((1.0, 1.0, 1.0, 0.0))
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        ax.set_zlabel("")
+    else:
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_zlabel("z")
     if title is None:
         ax.set_title(fr"Filtration at radius r= {filt_val:.4g} ")
     else:

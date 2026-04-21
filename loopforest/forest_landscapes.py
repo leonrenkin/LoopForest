@@ -1674,7 +1674,7 @@ def animate_barcode_measurement_generic(
         t_max: Optional[float] = None,
         dpi: int = 200,
         total_figsize: Tuple[float, float] = (12.0, 5.0),
-        plot_kwargs: Optional[dict] = None,
+        filtration_kwargs: Optional[dict] = None,
         measurement_kwargs: Optional[dict] = None,
     ):
     """
@@ -1717,10 +1717,10 @@ def animate_barcode_measurement_generic(
         DPI used when saving the animation.
     total_figsize : (float, float), optional
         Overall figure size for the two-panel figure.
-    plot_kwargs : dict or None, optional
+    filtration_kwargs : dict or None, optional
         Extra keyword arguments forwarded to
         ``forest.plot_at_filtration``. Useful keys include e.g.
-        ``fill_triangles``, ``vertex_size``, ``coloring``.
+        ``show_complex``, ``vertex_size``, ``coloring``.
     measurement_kwargs : dict or None, optional
         Extra keyword arguments forwarded to
         ``StepFunctionData.plot``, **except** for ``ax`` which is
@@ -1762,16 +1762,16 @@ def animate_barcode_measurement_generic(
     frame_times = np.linspace(t_min, t_max, frames).tolist()  # type: ignore
 
     # ---- Common kwargs for plot_at_filtration (cloud panel) ----
-    if plot_kwargs is None:
-        plot_kwargs = {}
+    if filtration_kwargs is None:
+        filtration_kwargs = {}
     # Reasonable defaults (only used if not explicitly overridden)
-    plot_kwargs = {
-        "fill_triangles": True,
+    filtration_kwargs = {
+        "show_complex": True,
         "vertex_size": 3,
         "coloring": "forest",
         "title": "Alpha Filtration",
         "show": False,   # important: we manage the figure ourselves
-        **plot_kwargs,
+        **filtration_kwargs,
     }
 
     # ---- Build the step function data once ----
@@ -1818,7 +1818,7 @@ def animate_barcode_measurement_generic(
     def _draw_frame_at_time(t: float):
         """Clear the cloud axis and redraw for filtration value t."""
         ax_cloud.clear()
-        forest.plot_at_filtration(filt_val=t, ax=ax_cloud, **plot_kwargs)
+        forest.plot_at_filtration(filt_val=t, ax=ax_cloud, **filtration_kwargs)
 
         # Optional: overlay a small text box with the current filtration value.
         ax_cloud.text(
