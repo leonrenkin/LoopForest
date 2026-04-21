@@ -13,6 +13,7 @@ from matplotlib.collections import LineCollection, PolyCollection
 import time
 import seaborn as sns
 from bisect import bisect_right
+import warnings
 
 # ------- helper function -----------
 
@@ -1512,16 +1513,14 @@ class PersistenceForest:
         linewidth_filt: float = 0.6,
         linewidth_cycle: float = 1.8,
         alpha_digits=None,
+        show_complex: Optional[bool] = None,
+        complex_opacity: float = 0.20,
+        cycle_opacity: float = 0.55,
+        signed: Optional[bool] = None,
+        camera_eye=None,
     ):
         """
-        Plot the 2-D point cloud, all edges/triangles with filtration <= filt_val,
-        and overlay the loops of the nodes active at filt_val.
-
-        Notes
-        -----
-        - GUDHI's AlphaComplex / SimplexTree work
-        Pass the same units here.
-        - Uses SimplexTree.get_filtration(), which is sorted by increasing filtration.
+        Plot the simplicial filtration at a fixed filtration value.
 
         Parameters
         ----------
@@ -1532,7 +1531,8 @@ class PersistenceForest:
         show : bool
             If True, calls plt.show() when done.
         fill_triangles : bool
-            If True, lightly fill triangles present at this filtration.
+            In 2D: lightly fill present triangles.
+            In 3D: used as fallback for ``show_complex`` when that is None.
         figsize : tuple[float, float]
             Figure size used when ``ax`` is None.
         vertex_size : float
@@ -1545,142 +1545,51 @@ class PersistenceForest:
             If True, draw small arrows along each loop edge to indicate
             the orientation of the cycle representatives.
         remove_double_edges : bool
-            If True, cancel edges appearing with opposite orientations before
-            plotting.
+            In 2D: cancel opposite-oriented duplicate edges before plotting.
+            In 3D: used as fallback to determine ``signed`` when ``signed`` is None.
         show_cycles : bool
             If True, overlay the active cycles at the filtration value.
+        show_complex : bool | None
+            For 3D plots, show complex boundary geometry. If None, uses
+            ``fill_triangles``.
+        complex_opacity : float
+            For 3D plots, opacity of complex boundary surfaces.
+        cycle_opacity : float
+            For 3D plots, opacity of cycle surfaces.
+        signed : bool | None
+            For 3D plots, whether to preserve orientation duplicates in chains.
+            If None, defaults to ``not remove_double_edges``.
+        camera_eye : Any
+            For 3D plots, camera specification as ``(elev, azim)`` or
+            ``{"elev": ..., "azim": ...}``.
 
         Returns
         -------
         matplotlib.axes.Axes
         """
-        
-        if self.dim != 2:
-            if self.dim == 3:
-                raise ValueError("For 3d points clouds, use plot_at_filtration_plotly() or interactive_plot_filtration() methods. The method plot_at_filtration() is only implemented for dimension 2")
-            raise ValueError("plot_at_filtration() only implemented for dimension 2")
-
-        color_map = self._get_color_map(coloring=coloring)
-
-        # --- Prep
-        pts = np.asarray(self.point_cloud, dtype=float)
-        if pts.ndim != 2 or pts.shape[1] != 2:
-            raise ValueError("point_cloud must be an (n_points, 2) array-like.")
-
-        if ax is None:
-            _, ax = plt.subplots(figsize=figsize)
-
-        # --- Collect edges and triangles present at this filtration value
-        edges_xy = []      # list of [[x1,y1],[x2,y2]]
-        tris_xy = []       # list of [[x1,y1],[x2,y2],[x3,y3]]
-        for simplex, f in self.filtration:
-            if f > filt_val:
-                # Filtration is sorted non-decreasing → safe to stop here
-                break
-            if len(simplex) == 2:  # edge
-                i, j = simplex
-                edges_xy.append([pts[i], pts[j]])
-            elif len(simplex) == 3:  # triangle
-                i, j, k = simplex
-                tris_xy.append([pts[i], pts[j], pts[k]])
-
-        # --- Base scatter
-        ax.scatter(
-            pts[:, 0], 
-            pts[:, 1],
-            s=vertex_size, 
-            color="k", 
-            label="points",
-            marker="o",
-            edgecolors="none",
-            zorder=2.8
+        from .simplicial_filtration_plotting import _plot_at_filtration_generic
+        return _plot_at_filtration_generic(
+            self,
+            filt_val=filt_val,
+            ax=ax,
+            show=show,
+            fill_triangles=fill_triangles,
+            figsize=figsize,
+            vertex_size=vertex_size,
+            coloring=coloring,
+            title=title,
+            show_orientation_arrows=show_orientation_arrows,
+            remove_double_edges=remove_double_edges,
+            show_cycles=show_cycles,
+            linewidth_filt=linewidth_filt,
+            linewidth_cycle=linewidth_cycle,
+            alpha_digits=alpha_digits,
+            show_complex=show_complex,
+            complex_opacity=complex_opacity,
+            cycle_opacity=cycle_opacity,
+            signed=signed,
+            camera_eye=camera_eye,
         )
-
-        # --- Draw triangles first (under edges)
-        if fill_triangles and tris_xy:
-            tri_coll = PolyCollection(
-                tris_xy, closed=True, edgecolors="none", facecolors="C0", alpha=0.2, zorder=1
-            )
-            ax.add_collection(tri_coll)
-
-        # --- Draw edges
-        if edges_xy:
-            edge_coll = LineCollection(edges_xy, linewidths=linewidth_filt, colors="0.3", zorder=2, label="edges")
-            ax.add_collection(edge_coll)
-
-        
-
-        # --- Overlay loops from active nodes at filt_val
-        if show_cycles:
-            for bar in self.barcode:
-                if filt_val>=bar.birth and filt_val<bar.death:
-
-                    cycle = bar.cycle_at_filtration_value(filt_val=filt_val)    
-
-                    # >>> make a Sequence[ArrayLike] (list of 2x2 arrays) for Pylance
-                    segments = self._chain_segments_2d(chain=cycle,signed=(not remove_double_edges))
-
-                    # Thicker colored edges along the loop
-                    loop_coll = LineCollection(segments, linewidths=linewidth_cycle, colors=[color_map[bar]], zorder=5)
-                    ax.add_collection(loop_coll)
-
-                    # Optional arrows to show loop edge orientation
-                    if show_orientation_arrows:
-                        for seg in segments:
-                            # seg is a 2x2 array: [start, end]
-                            (x0, y0), (x1, y1) = np.asarray(seg, dtype=float)
-
-                            dx = x1 - x0
-                            dy = y1 - y0
-                            length = float(np.hypot(dx, dy))
-                            if length == 0.0:
-                                continue  # skip degenerate segments
-
-                            # Place arrow around the middle of the segment, slightly shortened
-                            frac = 0.5  # fraction of the segment length used for the arrow body
-                            mx = 0.5 * (x0 + x1)
-                            my = 0.5 * (y0 + y1)
-
-                            # Direction unit vector
-                            ux = dx / length
-                            uy = dy / length
-
-                            half = 0.5 * frac * length
-                            x_start = mx - ux * half
-                            y_start = my - uy * half
-                            x_end   = mx + ux * half
-                            y_end   = my + uy * half
-
-                            ax.annotate(
-                                "",
-                                xy=(x_end, y_end),
-                                xytext=(x_start, y_start),
-                                arrowprops=dict(
-                                    arrowstyle="-|>",
-                                    linewidth=.2,
-                                    color=color_map[bar],
-                                    mutation_scale=6
-                                ),
-                                zorder=6,
-                        )
-
-        # --- Aesthetics
-        ax.set_aspect("equal", adjustable="box")
-        if title is None:
-            ax.set_title(fr"Filtration at radius r= {filt_val:.4g} ")
-        else:
-            ax.set_title(title)
-        #ax.set_xlabel("x")
-        #ax.set_ylabel("y")
-        # A simple legend (points + edges); loop colors are self-explanatory on top
-        #handles, labels = ax.get_legend_handles_labels()
-        #if handles:
-        #    ax.legend(loc="lower right", frameon=True)
-
-        ax.autoscale()  # fit collections
-        if show:
-            plt.show()
-        return ax
 
     def plot_at_filtration_with_dual( 
         self,
@@ -2508,7 +2417,7 @@ class PersistenceForest:
         signed: bool = False,
         filt_max: Optional[float] = None,
         min_bar_length: float = 0.0,
-        show_complex: bool = False,
+        show_complex: bool = True,
         complex_opacity: float = 0.20,
         cycle_opacity: float = 0.55,
         resolution: int =100,
@@ -2755,19 +2664,24 @@ class PersistenceForest:
         coloring: Literal["forest", "bars"] = "forest",
         show_cycles: bool = True,
         signed: bool = False,
-        min_bar_length: float = 0.0,
         show_complex: bool = True,
         complex_opacity: float = 0.20,
         cycle_opacity: float = 0.55,
         vertex_size: float = 3.0,
         dpi: int = 200,
-        cloud_figsize: tuple[float, float] = (6.0, 6.0),
-        total_figsize: Optional[tuple[float, float]] = None,
+        figsize: Optional[tuple[float, float]] = None,
+        pixel_size: Optional[tuple[int, int]] = None,
+        panel_width_ratios: tuple[float, float] = (3.5, 2.0),
+        filtration_kwargs: Optional[dict] = None,
         barcode_kwargs: Optional[dict] = None,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
         camera_mode: Literal["fixed", "orbit"] = "fixed",
         camera_eye=None,
+        # Deprecated aliases (kept for backward compatibility)
+        cloud_figsize: Optional[tuple[float, float]] = None,
+        total_figsize: Optional[tuple[float, float]] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        plot_kwargs: Optional[dict] = None,
         alpha_digits: Optional[int] = None,
     ):
         """
@@ -2799,8 +2713,6 @@ class PersistenceForest:
             Whether to display active cycle representatives.
         signed : bool
             If False, cancel opposite-oriented duplicate simplices first.
-        min_bar_length : float
-            Minimum lifespan required for displayed bars/cycles.
         show_complex : bool
             For 3D only: whether to show complex geometry.
         complex_opacity : float
@@ -2811,14 +2723,18 @@ class PersistenceForest:
             Marker size for point cloud vertices.
         dpi : int
             DPI used for matplotlib frame rendering and video export.
-        cloud_figsize : tuple[float, float]
-            Figure size used when ``with_barcode=False`` (matplotlib paths).
-        total_figsize : tuple[float, float] | None
-            Figure size used when ``with_barcode=True`` (matplotlib paths).
+        figsize : tuple[float, float] | None
+            Matplotlib figure size in inches.
+            Defaults to (6, 6) without barcode and (10, 5) with barcode.
+        pixel_size : tuple[int, int] | None
+            Figure size in pixels. If provided, overrides ``figsize``.
+        panel_width_ratios : tuple[float, float]
+            Relative widths of cloud/barcode panels when ``with_barcode=True``.
+        filtration_kwargs : dict | None
+            Extra kwargs forwarded to ``plot_at_filtration`` (except ``ax``,
+            ``show`` and ``filt_val``).
         barcode_kwargs : dict | None
             Extra kwargs forwarded to barcode plotting for matplotlib paths.
-        width, height : int | None
-            Optional output size in pixels (3D matplotlib/Plotly paths).
         camera_mode : {"fixed", "orbit"}
             3D camera mode.
         camera_eye :
@@ -2834,10 +2750,7 @@ class PersistenceForest:
             - 3D HTML path: Plotly figure.
         """
         from pathlib import Path
-        from .forest_plotting import (
-            _animate_filtration_generic,
-            _animate_filtration_generic_3d_matplotlib,
-        )
+        from .forest_plotting import _animate_filtration_generic
 
         out_format = format
         if out_format is None and filename is not None:
@@ -2849,6 +2762,42 @@ class PersistenceForest:
         if out_format not in {"mp4", "html"}:
             raise ValueError(f"Unsupported animation format: {out_format!r}. Use 'mp4' or 'html'.")
 
+        if plot_kwargs is not None:
+            warnings.warn(
+                "`plot_kwargs` is deprecated; use `filtration_kwargs`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if filtration_kwargs is None:
+                filtration_kwargs = dict(plot_kwargs)
+            else:
+                merged = dict(plot_kwargs)
+                merged.update(filtration_kwargs)
+                filtration_kwargs = merged
+
+        if width is not None or height is not None:
+            if width is None or height is None:
+                raise ValueError("Deprecated width/height must be provided together.")
+            warnings.warn(
+                "`width` and `height` are deprecated; use `pixel_size=(width, height)`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if pixel_size is None:
+                pixel_size = (int(width), int(height))
+
+        if cloud_figsize is not None or total_figsize is not None:
+            warnings.warn(
+                "`cloud_figsize` and `total_figsize` are deprecated; use `figsize=(w, h)`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if figsize is None:
+                if with_barcode and total_figsize is not None:
+                    figsize = total_figsize
+                elif (not with_barcode) and cloud_figsize is not None:
+                    figsize = cloud_figsize
+
         if self.dim == 2:
             if out_format == "html":
                 raise ValueError("HTML animation export is only implemented for ambient dimension 3.")
@@ -2857,18 +2806,16 @@ class PersistenceForest:
             if resolved_filename is not None and Path(resolved_filename).suffix.lower() == "":
                 resolved_filename = f"{resolved_filename}.mp4"
 
-            plot_kwargs = {
+            filtration_panel_kwargs = {
                 "fill_triangles": bool(show_complex),
                 "vertex_size": vertex_size,
                 "coloring": coloring,
                 "show_cycles": show_cycles,
                 "remove_double_edges": (not signed),
-                "show": False,
             }
-            barcode_panel_kwargs = {
-                "coloring": coloring,
-                "min_bar_length": min_bar_length,
-            }
+            if filtration_kwargs is not None:
+                filtration_panel_kwargs.update(filtration_kwargs)
+            barcode_panel_kwargs = {}
             if barcode_kwargs is not None:
                 barcode_panel_kwargs.update(barcode_kwargs)
             t_max_2d = t_max
@@ -2891,29 +2838,51 @@ class PersistenceForest:
                 t_min=t_min,
                 t_max=t_max_2d,
                 dpi=dpi,
-                cloud_figsize=cloud_figsize,
-                total_figsize=total_figsize,
-                plot_kwargs=plot_kwargs,
+                figsize=figsize,
+                pixel_size=pixel_size,
+                panel_width_ratios=panel_width_ratios,
+                filtration_kwargs=filtration_panel_kwargs,
                 barcode_kwargs=barcode_panel_kwargs,
                 alpha_digits=alpha_digits,
             )
 
         if self.dim == 3:
             if out_format == "html":
+                html_width = None
+                html_height = None
+                if pixel_size is not None:
+                    if len(pixel_size) != 2:
+                        raise ValueError("pixel_size must be a 2-tuple (width, height).")
+                    html_width = int(pixel_size[0])
+                    html_height = int(pixel_size[1])
+                elif figsize is not None:
+                    html_width = int(round(float(figsize[0]) * float(dpi)))
+                    html_height = int(round(float(figsize[1]) * float(dpi)))
+
+                filtration_panel_kwargs = {
+                    "coloring": coloring,
+                    "show_cycles": show_cycles,
+                    "signed": signed,
+                    "show_complex": show_complex,
+                    "complex_opacity": complex_opacity,
+                    "cycle_opacity": cycle_opacity,
+                    "vertex_size": vertex_size,
+                }
+                if filtration_kwargs is not None:
+                    filtration_panel_kwargs.update(filtration_kwargs)
                 fig = self.interactive_plot_filtration(
-                    coloring=coloring,
-                    show_cycles=show_cycles,
-                    signed=signed,
+                    coloring=filtration_panel_kwargs["coloring"],
+                    show_cycles=filtration_panel_kwargs["show_cycles"],
+                    signed=filtration_panel_kwargs["signed"],
                     filt_max=t_max,
-                    min_bar_length=min_bar_length,
-                    show_complex=show_complex,
-                    complex_opacity=complex_opacity,
-                    cycle_opacity=cycle_opacity,
+                    show_complex=filtration_panel_kwargs["show_complex"],
+                    complex_opacity=filtration_panel_kwargs["complex_opacity"],
+                    cycle_opacity=filtration_panel_kwargs["cycle_opacity"],
                     resolution=frames,
                     show=False,
-                    vertex_size=vertex_size,
-                    width=width,
-                    height=height,
+                    vertex_size=filtration_panel_kwargs["vertex_size"],
+                    width=html_width,
+                    height=html_height,
                 )
                 resolved_filename = filename if filename is not None else "filtration_animation_3d.html"
                 if Path(resolved_filename).suffix.lower() == "":
@@ -2925,33 +2894,53 @@ class PersistenceForest:
             if Path(resolved_filename).suffix.lower() == "":
                 resolved_filename = f"{resolved_filename}.mp4"
 
-            _animate_filtration_generic_3d_matplotlib(
+            filtration_panel_kwargs = {
+                "fill_triangles": bool(show_complex),
+                "show_complex": bool(show_complex),
+                "complex_opacity": complex_opacity,
+                "cycle_opacity": cycle_opacity,
+                "vertex_size": vertex_size,
+                "coloring": coloring,
+                "show_cycles": show_cycles,
+                "signed": signed,
+                "remove_double_edges": (not signed),
+                "camera_mode": camera_mode,
+                "camera_eye": camera_eye,
+            }
+            if filtration_kwargs is not None:
+                filtration_panel_kwargs.update(filtration_kwargs)
+
+            barcode_panel_kwargs = {}
+            if barcode_kwargs is not None:
+                barcode_panel_kwargs.update(barcode_kwargs)
+
+            t_max_3d = t_max
+            if t_max_3d is None:
+                finite_deaths = [float(bar.death) for bar in self.barcode if np.isfinite(float(bar.death))]
+                if finite_deaths:
+                    t_max_3d = max(finite_deaths)
+                else:
+                    finite_filtration = [float(f) for _, f in self.filtration if np.isfinite(float(f))]
+                    if finite_filtration:
+                        t_max_3d = max(finite_filtration)
+
+            return _animate_filtration_generic(
                 self,
-                filename=str(resolved_filename),
+                filename=resolved_filename,
                 with_barcode=with_barcode,
                 fps=fps,
                 frames=frames,
                 t_min=t_min,
-                t_max=t_max,
+                t_max=t_max_3d,
                 coloring=coloring,
-                show_cycles=show_cycles,
-                signed=signed,
-                min_bar_length=min_bar_length,
-                show_complex=show_complex,
-                complex_opacity=complex_opacity,
-                cycle_opacity=cycle_opacity,
-                vertex_size=vertex_size,
-                width=width,
-                height=height,
-                camera_mode=camera_mode,
-                camera_eye=camera_eye,
                 dpi=dpi,
-                cloud_figsize=cloud_figsize,
-                total_figsize=total_figsize,
-                barcode_kwargs=barcode_kwargs,
+                figsize=figsize,
+                pixel_size=pixel_size,
+                panel_width_ratios=panel_width_ratios,
+                filtration_kwargs=filtration_panel_kwargs,
+                barcode_kwargs=barcode_panel_kwargs,
                 alpha_digits=alpha_digits,
             )
-            return str(resolved_filename)
 
         raise ValueError("animate_filtration is only implemented for ambient dimensions 2 and 3.")
 

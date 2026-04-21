@@ -38,6 +38,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -165,21 +166,17 @@ def _plot_barcode_generic(
         fig = ax.figure
 
     # ---- Determine x-limits with a bit of padding ----
-    births = np.array([b.birth for b in bars], dtype=float)
     deaths = np.array([b.death for b in bars], dtype=float)
     finite_deaths = deaths[np.isfinite(deaths)]
 
-    xmin = float(np.nanmin(births))
-    if finite_deaths.size:
-        xmax = float(np.nanmax(finite_deaths))
-    else:
-        xmax = float(np.nanmax(births))
+    xmin = 0
+    xmax = float(np.nanmax(finite_deaths))
 
     if not np.isfinite(xmax):  # extreme corner case
-        xmax = xmin
+        raise ValueError("max of deaths is not finie")
 
     pad = (xmax - xmin) * 0.05 if xmax > xmin else 1.0
-    ax.set_xlim(xmin - pad, xmax + pad)
+    ax.set_xlim(xmin, xmax + pad)
 
     # ---- Draw segments ----
     for i, b in enumerate(bars):
@@ -472,10 +469,17 @@ def _animate_filtration_generic(
         t_min: Optional[float] = None,
         t_max: Optional[float] = None,
         dpi: int = 300,
-        cloud_figsize: tuple[float, float] = (6.0, 6.0),
+        figsize: Optional[tuple[float, float]] = None,
+        pixel_size: Optional[tuple[int, int]] = None,
+        panel_width_ratios: tuple[float, float] = (3.5, 2.0),
+        filtration_kwargs: Optional[dict] = None,
+        barcode_kwargs: Optional[dict] = None,
+        # Deprecated aliases, kept for backward compatibility
+        cloud_figsize: Optional[tuple[float, float]] = None,
         total_figsize: Optional[tuple[float, float]] = None,
         plot_kwargs: Optional[dict] = None,
-        barcode_kwargs: Optional[dict] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
         alpha_digits: Optional[int] = None,
     ):
         """
@@ -501,15 +505,19 @@ def _animate_filtration_generic(
             Optional lower/upper bounds on the filtration values to animate.
         dpi : int, optional
             DPI for saving the animation.
-        cloud_figsize : (float, float), optional
-            Size of the point-cloud panel when ``with_barcode=False``.
-        total_figsize : (float, float) | None, optional
-            Total figure size when ``with_barcode=True``. If None, a reasonable
-            default (10, 5) is used.
-        plot_kwargs : dict | None, optional
+        figsize : (float, float) | None, optional
+            Figure size in inches. If None, defaults to (6,6) without barcode
+            and (10,5) with barcode.
+        pixel_size : (int, int) | None, optional
+            Figure size in pixels. If provided, takes precedence over
+            ``figsize`` and is converted using ``dpi``.
+        panel_width_ratios : (float, float), optional
+            Width ratios for cloud and barcode panels when
+            ``with_barcode=True``.
+        filtration_kwargs : dict | None, optional
             Extra keyword arguments forwarded to ``plot_at_filtration``.
             Example::
-                plot_kwargs=dict(
+                filtration_kwargs=dict(
                     fill_triangles=True,
                     loop_vertex_markers=False,
                     vertex_size=3,
@@ -538,38 +546,132 @@ def _animate_filtration_generic(
 
         if not hasattr(forest, "filtration") or not forest.filtration:
             raise ValueError("Forest has no filtration data to animate.")
+        is_3d = (getattr(forest, "dim", None) == 3)
+        if int(dpi) <= 0:
+            raise ValueError("dpi must be a positive integer.")
+
+        if len(panel_width_ratios) != 2:
+            raise ValueError("panel_width_ratios must have exactly two entries.")
+        if float(panel_width_ratios[0]) <= 0 or float(panel_width_ratios[1]) <= 0:
+            raise ValueError("panel_width_ratios entries must be positive.")
+
+        if width is not None or height is not None:
+            if width is None or height is None:
+                raise ValueError("Deprecated width/height must be provided together.")
+            warnings.warn(
+                "`width` and `height` are deprecated in animate_filtration; "
+                "use `pixel_size=(width, height)`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if pixel_size is None:
+                pixel_size = (int(width), int(height))
+
+        if cloud_figsize is not None or total_figsize is not None:
+            warnings.warn(
+                "`cloud_figsize` and `total_figsize` are deprecated in animate_filtration; "
+                "use `figsize=(w, h)`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if figsize is None:
+                if with_barcode and total_figsize is not None:
+                    figsize = total_figsize
+                elif (not with_barcode) and cloud_figsize is not None:
+                    figsize = cloud_figsize
+
+        if plot_kwargs is not None:
+            warnings.warn(
+                "`plot_kwargs` is deprecated in animate_filtration; "
+                "use `filtration_kwargs`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if filtration_kwargs is None:
+                filtration_kwargs = dict(plot_kwargs)
+            else:
+                merged = dict(plot_kwargs)
+                merged.update(filtration_kwargs)
+                filtration_kwargs = merged
 
         # Optional restriction to a time window
         if t_min is None:
             t_min = 0.0
         if t_max is None:
-            t_max = max(bar.death for bar in forest.barcode)
+            finite_deaths = [
+                float(bar.death)
+                for bar in getattr(forest, "barcode", [])
+                if np.isfinite(float(bar.death))
+            ]
+            if finite_deaths:
+                t_max = max(finite_deaths)
+            else:
+                finite_filtration = [float(f) for _, f in forest.filtration if np.isfinite(float(f))]
+                if not finite_filtration:
+                    raise ValueError("Could not infer finite t_max from barcode or filtration.")
+                t_max = max(finite_filtration)
 
         # Uniformly spaced in filtration value → uniform speed
         frame_times = np.linspace(t_min, t_max, frames).tolist()  # pyright: ignore[reportCallIssue, reportArgumentType]
 
         # ---- Common kwargs for plot_at_filtration (cloud panel) ----
-        if plot_kwargs is None:
-            plot_kwargs = {}
+        if filtration_kwargs is None:
+            filtration_kwargs = {}
+        else:
+            filtration_kwargs = dict(filtration_kwargs)
+
+        banned_filtration_keys = {"ax", "show", "filt_val"}
+        bad_keys = [k for k in banned_filtration_keys if k in filtration_kwargs]
+        if bad_keys:
+            raise ValueError(
+                "filtration_kwargs contains reserved keys that are managed by animate_filtration: "
+                f"{sorted(bad_keys)}"
+            )
+        if "coloring" in filtration_kwargs and filtration_kwargs["coloring"] != coloring:
+            warnings.warn(
+                "Ignoring `filtration_kwargs['coloring']` because top-level `coloring` controls both panels.",
+                UserWarning,
+                stacklevel=2,
+            )
+            filtration_kwargs.pop("coloring", None)
+
         # Reasonable defaults (only used if not explicitly overridden)
-        plot_kwargs = {
-            "fill_triangles": True,
-            "vertex_size": 3,
-            "coloring": coloring,
-            "show": False,  
-            **plot_kwargs,
-        }
+        if is_3d:
+            filtration_kwargs = {
+                "show_complex": True,
+                "vertex_size": 3,
+                "coloring": coloring,
+                "show": False,
+                **filtration_kwargs,
+            }
+        else:
+            filtration_kwargs = {
+                "fill_triangles": True,
+                "vertex_size": 3,
+                "coloring": coloring,
+                "show": False,  
+                **filtration_kwargs,
+            }
+        filtration_kwargs["show"] = False
 
         # ---- Barcode kwargs & shared color dict ----
+        rendered_figsize, _ = _resolve_matplotlib_figsize(
+            with_barcode=with_barcode,
+            dpi=int(dpi),
+            figsize=figsize,
+            pixel_size=pixel_size,
+        )
         if with_barcode:
-            if total_figsize is None:
-                total_figsize = (10.0, 5.0)
-
-            fig, (ax_cloud, ax_bar) = plt.subplots(
-                1, 2,
-                figsize=total_figsize,
-                layout="constrained", 
-            )
+            if is_3d:
+                fig = plt.figure(figsize=rendered_figsize, layout="constrained")
+                gs = fig.add_gridspec(1, 2, width_ratios=panel_width_ratios)
+                ax_cloud = fig.add_subplot(gs[0, 0], projection="3d")
+                ax_bar = fig.add_subplot(gs[0, 1])
+            else:
+                fig = plt.figure(figsize=rendered_figsize, layout="constrained")
+                gs = fig.add_gridspec(1, 2, width_ratios=panel_width_ratios)
+                ax_cloud = fig.add_subplot(gs[0, 0])
+                ax_bar = fig.add_subplot(gs[0, 1])
 
             # Draw the (static) barcode once
             if not getattr(forest, "barcode", None):
@@ -577,17 +679,25 @@ def _animate_filtration_generic(
 
             if barcode_kwargs is None:
                 barcode_kwargs = {}
+            else:
+                barcode_kwargs = dict(barcode_kwargs)
+            if "ax" in barcode_kwargs:
+                raise ValueError("barcode_kwargs cannot contain 'ax'; axis is managed internally.")
+            if "coloring" in barcode_kwargs and barcode_kwargs["coloring"] != coloring:
+                warnings.warn(
+                    "Ignoring `barcode_kwargs['coloring']` because top-level `coloring` controls both panels.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                barcode_kwargs.pop("coloring", None)
             # Do not let the caller override ax here
-            barcode_kwargs = {
-                k: v for k, v in barcode_kwargs.items()
-                if k not in {"ax"}
-            }
             # Defaults for the barcode panel – user can override sort/title/xlabel
             barcode_kwargs = {
                 "sort": "length",
                 "title": "Barcode",
                 "xlabel": "filtration value",
                 "tight_layout": False,
+                "coloring": coloring,
                 **barcode_kwargs,
             }
 
@@ -601,16 +711,41 @@ def _animate_filtration_generic(
             current_t0 = frame_times[0]
             barcode_line = ax_bar.axvline(current_t0, color="k", linewidth=2)
         else:
-            fig, ax_cloud = plt.subplots(figsize=cloud_figsize)
+            if is_3d:
+                fig = plt.figure(figsize=rendered_figsize)
+                ax_cloud = fig.add_subplot(111, projection="3d")
+            else:
+                fig, ax_cloud = plt.subplots(figsize=rendered_figsize)
             ax_bar = None
             barcode_line = None
 
         # ---- Helper to draw a single frame on the cloud panel ----
-        def _draw_frame_at_time(t: float):
+        def _draw_frame_at_time(t: float, frame_idx: int = 0):
             """Helper: clear the cloud axis and redraw for filtration value t."""
             ax_cloud.clear()
+            local_plot_kwargs = filtration_kwargs
+            if is_3d:
+                local_plot_kwargs = dict(filtration_kwargs)
+                camera_mode = local_plot_kwargs.pop("camera_mode", "fixed")
+                camera_eye = local_plot_kwargs.get("camera_eye", None)
+                if camera_mode not in {"fixed", "orbit"}:
+                    raise ValueError("camera_mode must be 'fixed' or 'orbit'.")
+                if camera_mode == "orbit":
+                    base_elev = 22.0
+                    base_azim = -55.0
+                    if isinstance(camera_eye, dict):
+                        base_elev = float(camera_eye.get("elev", base_elev))
+                        base_azim = float(camera_eye.get("azim", base_azim))
+                    elif isinstance(camera_eye, (tuple, list)) and len(camera_eye) >= 2:
+                        base_elev = float(camera_eye[0])
+                        base_azim = float(camera_eye[1])
+                    denom = max(1, len(frame_times) - 1)
+                    local_plot_kwargs["camera_eye"] = (
+                        base_elev,
+                        base_azim + 360.0 * float(frame_idx) / float(denom),
+                    )
             # Delegate the heavy lifting to the existing helper
-            forest.plot_at_filtration(filt_val=t, ax=ax_cloud, **plot_kwargs)
+            forest.plot_at_filtration(filt_val=t, ax=ax_cloud, **local_plot_kwargs)
 
             # Optional: overlay a small text box with the current filtration value.
             # Comment this out if you prefer only the built-in title.
@@ -618,17 +753,19 @@ def _animate_filtration_generic(
                 radius_text = rf"$\alpha = {t:.3g}$"
             else:
                 radius_text = rf"$\alpha = {t:.{alpha_digits}f}$"
-            ax_cloud.text(
-                0.02, 0.98, radius_text,
-                transform=ax_cloud.transAxes,
-                va="top", ha="left",
+            ax_cloud.annotate(
+                radius_text,
+                xy=(0.02, 0.98),
+                xycoords="axes fraction",
+                va="top",
+                ha="left",
                 fontsize=11,
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7),
             )
 
         # ---- Animation callbacks ----
         def init():
-            _draw_frame_at_time(frame_times[0])
+            _draw_frame_at_time(frame_times[0], frame_idx=0)
             if with_barcode and barcode_line is not None:
                 t0 = frame_times[0]
                 barcode_line.set_xdata([t0, t0])
@@ -636,7 +773,7 @@ def _animate_filtration_generic(
 
         def update(frame_idx: int):
             t = frame_times[frame_idx]
-            _draw_frame_at_time(t)
+            _draw_frame_at_time(t, frame_idx=frame_idx)
             if with_barcode and barcode_line is not None:
                 barcode_line.set_xdata([t, t])
             return []
@@ -738,11 +875,14 @@ def _compute_frame_times(
 def _resolve_matplotlib_figsize(
     *,
     with_barcode: bool,
-    width: Optional[int],
-    height: Optional[int],
     dpi: int,
-    cloud_figsize: tuple[float, float],
-    total_figsize: Optional[tuple[float, float]],
+    figsize: Optional[tuple[float, float]] = None,
+    pixel_size: Optional[tuple[int, int]] = None,
+    # Deprecated aliases
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    cloud_figsize: Optional[tuple[float, float]] = None,
+    total_figsize: Optional[tuple[float, float]] = None,
 ) -> tuple[tuple[float, float], tuple[int, int]]:
     """
     Resolve a deterministic, even pixel canvas and matching figure size.
@@ -753,18 +893,32 @@ def _resolve_matplotlib_figsize(
     def _even(v: int) -> int:
         return v if (v % 2 == 0) else (v + 1)
 
-    if width is not None and height is not None:
-        px_w = _even(max(2, int(round(float(width)))))
-        px_h = _even(max(2, int(round(float(height)))))
+    if width is not None or height is not None:
+        if width is None or height is None:
+            raise ValueError("width and height must be provided together.")
+        if pixel_size is None:
+            pixel_size = (int(width), int(height))
+
+    if pixel_size is not None:
+        if len(pixel_size) != 2:
+            raise ValueError("pixel_size must be a 2-tuple (width, height).")
+        px_w = _even(max(2, int(round(float(pixel_size[0])))))
+        px_h = _even(max(2, int(round(float(pixel_size[1])))))
         return (px_w / float(dpi), px_h / float(dpi)), (px_w, px_h)
 
-    if with_barcode:
-        if total_figsize is None:
-            base_w, base_h = 10.0, 5.0
-        else:
-            base_w, base_h = float(total_figsize[0]), float(total_figsize[1])
+    if figsize is not None:
+        base_w, base_h = float(figsize[0]), float(figsize[1])
     else:
-        base_w, base_h = float(cloud_figsize[0]), float(cloud_figsize[1])
+        if with_barcode:
+            if total_figsize is None:
+                base_w, base_h = 10.0, 5.0
+            else:
+                base_w, base_h = float(total_figsize[0]), float(total_figsize[1])
+        else:
+            if cloud_figsize is None:
+                base_w, base_h = 6.0, 6.0
+            else:
+                base_w, base_h = float(cloud_figsize[0]), float(cloud_figsize[1])
 
     px_w = _even(max(2, int(round(base_w * float(dpi)))))
     px_h = _even(max(2, int(round(base_h * float(dpi)))))
