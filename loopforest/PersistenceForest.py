@@ -2410,7 +2410,7 @@ class PersistenceForest:
 
         return fig
 
-    def interactive_plot_filtration(
+    def plot_filtration_interactive(
         self,
         coloring: Literal["forest", "bars"] = "forest",
         show_cycles: bool = True,
@@ -2468,7 +2468,7 @@ class PersistenceForest:
         """
         go = self._require_plotly()
         if self.dim not in (2, 3):
-            raise ValueError("interactive_plot_filtration is only implemented for dimensions 2 and 3.")
+            raise ValueError("plot_filtration_interactive is only implemented for dimensions 2 and 3.")
 
         if filt_max is None:
             filt_max = max( [bar.death for bar in self.barcode] )*1.03
@@ -2518,7 +2518,7 @@ class PersistenceForest:
                     vertex_size=vertex_size
                 )
             else:
-                raise ValueError("interactive_plot_filtration is only implemented for dimensions 2 and 3.")
+                raise ValueError("plot_filtration_interactive is only implemented for dimensions 2 and 3.")
 
             frames.append(go.Frame(name=f"{v:.12g}", data=frame_traces, traces=list(range(len(frame_traces))),))
 
@@ -2591,6 +2591,20 @@ class PersistenceForest:
             fig.show(renderer=renderer)
 
         return fig
+
+    def interactive_plot_filtration(self, *args, **kwargs):
+        """
+        Deprecated alias for ``plot_filtration_interactive``.
+
+        For backward compatibility, forwards all arguments to
+        ``plot_filtration_interactive``.
+        """
+        warnings.warn(
+            "`interactive_plot_filtration` is deprecated; use `plot_filtration_interactive`.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.plot_filtration_interactive(*args, **kwargs)
 
     # ------ forest plotting tools ------------
 
@@ -2870,7 +2884,7 @@ class PersistenceForest:
                 }
                 if filtration_kwargs is not None:
                     filtration_panel_kwargs.update(filtration_kwargs)
-                fig = self.interactive_plot_filtration(
+                fig = self.plot_filtration_interactive(
                     coloring=filtration_panel_kwargs["coloring"],
                     show_cycles=filtration_panel_kwargs["show_cycles"],
                     signed=filtration_panel_kwargs["signed"],
