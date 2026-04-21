@@ -951,8 +951,8 @@ def _resolve_figure_margins(
     """
     if figure_margins is None:
         if with_barcode:
-            return {"left": 0.06, "right": 0.985, "bottom": 0.10, "top": 0.90}
-        return {"left": 0.08, "right": 0.98, "bottom": 0.10, "top": 0.92}
+            return {"left": 0.02, "right": 0.98, "bottom": 0.10, "top": 0.90}
+        return {"left": 0.02, "right": 0.98, "bottom": 0.10, "top": 0.92}
 
     if not isinstance(figure_margins, dict):
         raise ValueError(
