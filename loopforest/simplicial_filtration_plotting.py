@@ -55,11 +55,11 @@ def _resolve_style_2d(style_2d: Optional[dict[str, Any]]) -> dict[str, Any]:
         "complex_face_color": "C0",
         "complex_face_alpha": 0.2,
         "complex_edge_color": "0.3",
-        "complex_edge_width": 0.6,
-        "cycle_edge_width": 1.8,
+        "complex_edge_width": 0.8,
+        "cycle_edge_width": 1.2,
         "show_orientation_arrows": False,
         "arrow_linewidth": 0.8,
-        "arrow_scale": 12.0,
+        "arrow_scale": 4.0,
     }
     if style_2d:
         style.update(style_2d)
@@ -103,6 +103,7 @@ def _plot_at_filtration_generic(
     title: Optional[str] = None,
     show_cycles: bool = True,
     signed: bool = False,
+    min_bar_length: float = 0,
     style_2d: Optional[dict[str, Any]] = None,
     style_3d: Optional[dict[str, Any]] = None,
 ):
@@ -124,6 +125,7 @@ def _plot_at_filtration_generic(
             title=title,
             show_cycles=show_cycles,
             signed=signed,
+            min_bar_length = min_bar_length,
             style_2d=style_2d,
         )
     if forest.dim == 3:
@@ -135,11 +137,11 @@ def _plot_at_filtration_generic(
             show_complex=show_complex,
             show_cycles=show_cycles,
             signed=signed,
-            min_bar_length=0.0,
             figsize=figsize,
             vertex_size=vertex_size,
             coloring=coloring,
             title=title,
+            min_bar_length=min_bar_length,
             style_3d=style_3d,
         )
 
@@ -158,6 +160,7 @@ def _plot_at_filtration_2d(
     title: Optional[str] = None,
     show_cycles: bool = True,
     signed: bool = False,
+    min_bar_length: float = 0,
     style_2d: Optional[dict[str, Any]] = None,
 ):
     """
@@ -220,7 +223,7 @@ def _plot_at_filtration_2d(
 
     if show_cycles:
         for bar in forest.barcode:
-            if filt_val >= bar.birth and filt_val < bar.death:
+            if filt_val >= bar.birth and filt_val < bar.death and bar.lifespan()>=min_bar_length:
                 cycle = bar.cycle_at_filtration_value(filt_val=filt_val)
                 segments = forest._chain_segments_2d(
                     chain=cycle,

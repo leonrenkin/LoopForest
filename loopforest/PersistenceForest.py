@@ -1509,6 +1509,7 @@ class PersistenceForest:
         vertex_size: float = 3,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
+        min_bar_length: float = 0,
         style_2d: Optional[dict[str, Any]] = None,
         style_3d: Optional[dict[str, Any]] = None,
     ):
@@ -1574,6 +1575,7 @@ class PersistenceForest:
             title=title,
             show_cycles=show_cycles,
             signed=signed,
+            min_bar_length=min_bar_length,
             style_2d=style_2d,
             style_3d=style_3d,
         )
