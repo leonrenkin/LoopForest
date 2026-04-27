@@ -51,12 +51,12 @@ def _desaturate_color(color: Any, amount: float) -> tuple[float, float, float]:
 def _resolve_style_2d(style_2d: Optional[dict[str, Any]]) -> dict[str, Any]:
     style = {
         "point_color": "k",
-        "point_alpha": 1.0,
+        "point_alpha": 0.8,
         "complex_face_color": "C0",
         "complex_face_alpha": 0.2,
         "complex_edge_color": "0.3",
-        "complex_edge_width": 0.8,
-        "cycle_edge_width": 1.2,
+        "complex_edge_width": 0.6,
+        "cycle_edge_width": 1.8,
         "show_orientation_arrows": False,
         "arrow_linewidth": 0.8,
         "arrow_scale": 4.0,
@@ -79,7 +79,7 @@ def _resolve_style_3d(style_3d: Optional[dict[str, Any]]) -> dict[str, Any]:
         "complex_edge_color": "0.35",
         "cycle_edge_color": None,
         "complex_edge_width": 0.6,
-        "cycle_edge_width": 0.2,
+        "cycle_edge_width": 1.8,
         "complex_edge_alpha": None,
         "cycle_edge_alpha": None,
         "antialiased": True,
@@ -104,6 +104,7 @@ def _plot_at_filtration_generic(
     show_cycles: bool = True,
     signed: bool = False,
     min_bar_length: float = 0,
+    dpi: int =200,
     style_2d: Optional[dict[str, Any]] = None,
     style_3d: Optional[dict[str, Any]] = None,
 ):
@@ -126,6 +127,7 @@ def _plot_at_filtration_generic(
             show_cycles=show_cycles,
             signed=signed,
             min_bar_length = min_bar_length,
+            dpi = dpi,
             style_2d=style_2d,
         )
     if forest.dim == 3:
@@ -142,6 +144,7 @@ def _plot_at_filtration_generic(
             coloring=coloring,
             title=title,
             min_bar_length=min_bar_length,
+            dpi = dpi,
             style_3d=style_3d,
         )
 
@@ -161,6 +164,7 @@ def _plot_at_filtration_2d(
     show_cycles: bool = True,
     signed: bool = False,
     min_bar_length: float = 0,
+    dpi: int =200,
     style_2d: Optional[dict[str, Any]] = None,
 ):
     """
@@ -174,7 +178,7 @@ def _plot_at_filtration_2d(
         raise ValueError("point_cloud must be an (n_points, 2) array-like.")
 
     if ax is None:
-        _, ax = plt.subplots(figsize=figsize)
+        _, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
     edges_xy = []
     tris_xy = []
@@ -197,7 +201,7 @@ def _plot_at_filtration_2d(
         label="points",
         marker="o",
         edgecolors="none",
-        zorder=2.8,
+        zorder=6,
     )
 
     if show_complex and tris_xy:
@@ -297,6 +301,7 @@ def _plot_at_filtration_3d(
     vertex_size: float = 3.0,
     coloring: Literal["forest", "bars"] = "forest",
     title: Optional[str] = None,
+    dpi: int =200,
     style_3d: Optional[dict[str, Any]] = None,
 ):
     """
@@ -319,7 +324,7 @@ def _plot_at_filtration_3d(
 
     created_ax = False
     if ax is None:
-        fig = plt.figure(figsize=figsize)
+        fig = plt.figure(figsize=figsize,dpi=dpi)
         ax = fig.add_subplot(111, projection="3d")
         created_ax = True
     elif not hasattr(ax, "zaxis"):

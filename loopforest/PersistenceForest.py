@@ -1505,11 +1505,12 @@ class PersistenceForest:
         show_cycles: bool = True,
         show: bool = True,
         show_complex: bool = True,
-        figsize: tuple[float, float] = (7, 7), 
-        vertex_size: float = 3,
+        figsize: tuple[float, float] = (5, 5), 
+        vertex_size: float = 7,
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
         min_bar_length: float = 0,
+        dpi: int = 300,
         style_2d: Optional[dict[str, Any]] = None,
         style_3d: Optional[dict[str, Any]] = None,
     ):
@@ -1576,6 +1577,7 @@ class PersistenceForest:
             show_cycles=show_cycles,
             signed=signed,
             min_bar_length=min_bar_length,
+            dpi=dpi,
             style_2d=style_2d,
             style_3d=style_3d,
         )
