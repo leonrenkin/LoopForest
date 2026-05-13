@@ -104,6 +104,8 @@ def _plot_at_filtration_generic(
     show_cycles: bool = True,
     signed: bool = False,
     min_bar_length: float = 0,
+    point_zorder: float = 6,
+    cycle_zorder: float = 5,
     dpi: int =200,
     style_2d: Optional[dict[str, Any]] = None,
     style_3d: Optional[dict[str, Any]] = None,
@@ -127,6 +129,8 @@ def _plot_at_filtration_generic(
             show_cycles=show_cycles,
             signed=signed,
             min_bar_length = min_bar_length,
+            point_zorder=point_zorder,
+            cycle_zorder=cycle_zorder,
             dpi = dpi,
             style_2d=style_2d,
         )
@@ -164,6 +168,8 @@ def _plot_at_filtration_2d(
     show_cycles: bool = True,
     signed: bool = False,
     min_bar_length: float = 0,
+    point_zorder: float = 6,
+    cycle_zorder: float = 5,
     dpi: int =200,
     style_2d: Optional[dict[str, Any]] = None,
 ):
@@ -201,7 +207,7 @@ def _plot_at_filtration_2d(
         label="points",
         marker="o",
         edgecolors="none",
-        zorder=6,
+        zorder=point_zorder,
     )
 
     if show_complex and tris_xy:
@@ -238,7 +244,7 @@ def _plot_at_filtration_2d(
                     segments,
                     linewidths=float(style["cycle_edge_width"]),
                     colors=[color_map[bar]],
-                    zorder=5,
+                    zorder=cycle_zorder,
                 )
                 ax.add_collection(loop_coll)
 

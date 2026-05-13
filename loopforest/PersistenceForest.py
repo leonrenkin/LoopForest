@@ -1510,6 +1510,8 @@ class PersistenceForest:
         coloring: Literal['forest','bars'] = "forest",
         title: Optional[str] = None,
         min_bar_length: float = 0,
+        point_zorder: float = 6,
+        cycle_zorder: float = 5,
         dpi: int = 300,
         style_2d: Optional[dict[str, Any]] = None,
         style_3d: Optional[dict[str, Any]] = None,
@@ -1538,6 +1540,12 @@ class PersistenceForest:
             Figure size used when ``ax`` is None.
         vertex_size : float
             Marker size for point cloud.
+        point_zorder : float
+            Matplotlib z-order for point markers in 2D plots.
+            For example, use ``point_zorder=4, cycle_zorder=6`` to draw
+            cycles above points.
+        cycle_zorder : float
+            Matplotlib z-order for cycle edges in 2D plots.
         coloring : {"forest","bars"}
             Color scheme; builds the map on first use.
         title : str | None
@@ -1577,6 +1585,8 @@ class PersistenceForest:
             show_cycles=show_cycles,
             signed=signed,
             min_bar_length=min_bar_length,
+            point_zorder=point_zorder,
+            cycle_zorder=cycle_zorder,
             dpi=dpi,
             style_2d=style_2d,
             style_3d=style_3d,
