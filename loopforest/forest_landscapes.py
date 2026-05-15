@@ -1498,6 +1498,9 @@ def plot_landscape_family(
         ax: Optional["matplotlib.axes.Axes"] = None,
         title: Optional[str] = None,
         show: bool = True,
+        *,
+        show_legend: Optional[bool] = None,
+        linewidth: Optional[float] = None,
     ):
     """
     Plot selected landscapes λ_k from a stored family on a given forest.
@@ -1514,6 +1517,12 @@ def plot_landscape_family(
         Axis to draw on; a new one is created if omitted.
     title : str, optional
         Custom plot title.
+    show_legend : bool, optional
+        Whether to show the legend. Defaults to showing it for fewer than
+        10 plotted landscapes and hiding it otherwise.
+    linewidth : float, optional
+        Line width for the landscape plots. If omitted, Matplotlib's default
+        line width is used.
 
     Returns
     -------
@@ -1532,17 +1541,27 @@ def plot_landscape_family(
     if ax is None:
         fig, ax = plt.subplots()
 
+    zorders = {k: zorder for zorder, k in enumerate(sorted(ks, reverse=True), start=1)}
     for k in ks:
         plf = family.landscapes[k]
-        ax.plot(plf.xs, plf.ys, label=fr"$\lambda_{k}$")
+        plot_kwargs = {
+            "label": fr"$\lambda_{{{k}}}$",
+            "zorder": zorders[k],
+        }
+        if linewidth is not None:
+            plot_kwargs["linewidth"] = linewidth
+        ax.plot(plf.xs, plf.ys, **plot_kwargs)
 
     ax.set_xlabel("filtration value")
     ax.set_ylabel("landscape value")
     if title is None:
         title = f"Generalized landscapes of {label}"
     ax.set_title(title)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    if show_legend is None:
+        show_legend = len(ks) < 10
+    if show_legend:
+        ax.legend()
+    ax.set_ylim(bottom=0)
 
     if show:
         plt.show()

@@ -3234,6 +3234,8 @@ class PersistenceForest:
         ax=None,
         title: Optional[str] = None,
         *args,
+        show_legend: Optional[bool] = None,
+        linewidth: Optional[float] = None,
         **kwargs,
     ):
         """
@@ -3249,9 +3251,25 @@ class PersistenceForest:
             Axes to draw on; if None, a new figure is created.
         title : str | None
             Custom plot title.
+        show_legend : bool | None
+            Whether to show the legend. Defaults to showing it for fewer than
+            10 plotted landscapes and hiding it otherwise.
+        linewidth : float | None
+            Line width for the landscape plots. If omitted, Matplotlib's
+            default line width is used.
         """
         from .forest_landscapes import plot_landscape_family
-        return plot_landscape_family(self, label, ks=ks, ax=ax, title=title, *args, **kwargs)
+        return plot_landscape_family(
+            self,
+            label,
+            ks,
+            ax,
+            title,
+            *args,
+            show_legend=show_legend,
+            linewidth=linewidth,
+            **kwargs,
+        )
 
     def plot_landscape_comparison_between_functionals(
         self,
