@@ -1566,6 +1566,22 @@ class PersistenceForest:
         else:
             raise ValueError("coloring must be 'forest' or 'bars'")
 
+    def set_longest_bar_colors(
+        self,
+        colors: Sequence[Any],
+        coloring: Literal["forest", "bars"] = "forest",
+    ) -> None:
+        """Overwrite colors for the longest bars in the selected color map."""
+        from .color_scheme import _to_hex
+
+        color_map = self._get_color_map(coloring=coloring)
+        bars_sorted = sorted(list(self.barcode), key=lambda bar: bar.lifespan(), reverse=True)
+
+        for bar, color in zip(bars_sorted, colors):
+            color_map[bar] = _to_hex(color)
+
+        return
+
     # ----- filtration plotting helpers -------
 
     def _simplices_present_at_filtration(self, filt_val: float) -> Dict[str, Any]:
