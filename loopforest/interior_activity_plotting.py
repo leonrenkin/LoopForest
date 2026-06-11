@@ -38,12 +38,12 @@ def plot_interior_simplex_activity(
         "point_alpha": 0.9,
         "activity_edge_color": "white",
         "activity_edge_width": 0.25,
-        "complex_edge_color": "0.25",
+        "complex_edge_color": "0",
         "complex_edge_width": 0.45,
-        "complex_edge_alpha": 0.35,
+        "complex_edge_alpha": 0.85,
         "background_color": "white",
         "remove_axes": True,
-        "activity_alpha_range": (0.18, 0.88),
+        "activity_alpha_range": (0.15, 0.95),
     }
     if style is not None:
         plot_style.update(style)
