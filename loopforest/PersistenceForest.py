@@ -1363,6 +1363,36 @@ class PersistenceForest:
 
         return
 
+    def interior_simplex_activity(self) -> dict[tuple[int, ...], list[tuple[PFBar, float, float]]]:
+        """
+        Return active interior intervals for full-dimensional simplices.
+
+        The return value maps each unsigned full-dimensional simplex to a list
+        of ``(bar, active_start, active_end)`` tuples. The interval is the
+        half-open filtration range where the simplex is in the interior of the
+        active cycle representative for that bar.
+        """
+        activity = defaultdict(list)
+
+        for bar in self.barcode:
+            first_rep = bar.cycle_reps[0]
+            first_simplex_keys = {key(simplex) for simplex, _orientation in first_rep.interior}
+            last_active_end_by_simplex = {}
+
+            for cycle_rep in bar.cycle_reps:
+                cycle_rep_simplex_keys = {key(simplex) for simplex, _orientation in cycle_rep.interior}
+
+                for simplex_key in first_simplex_keys:
+                    if simplex_key in cycle_rep_simplex_keys:
+                        last_active_end_by_simplex[simplex_key] = cycle_rep.active_end
+
+            for simplex_key in first_simplex_keys:
+                activity[simplex_key].append(
+                    (bar, first_rep.active_start, last_active_end_by_simplex[simplex_key])
+                )
+
+        return dict(activity)
+
     # ----- Useful barcode functions --------
 
     def max_bar(self)-> PFBar:
